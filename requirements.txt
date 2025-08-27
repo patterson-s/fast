@@ -1,8 +1,5 @@
 pandas
 pyarrow
-fastparquet
-openpyxl   # for Excel files (.xlsx)
-pyreadr    # for RData files if you want to inspect those too
-jupyter
-notebook
 dash
+plotly
+numpy
