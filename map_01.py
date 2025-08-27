@@ -15,7 +15,7 @@ import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
 
-DEF_PARQUET = Path(__file__).resolve().parent / "FAST-cm" / "FAST-Forecast.parquet"
+DEF_PARQUET = Path(__file__).resolve().parent / "data" / "FAST-Forecast.parquet"
 
 def load_dataframe(parquet_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(parquet_path)
