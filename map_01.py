@@ -288,7 +288,13 @@ def main():
         sys.exit(1)
     
     app = create_app(df)
-    app.run(debug=True)
+    
+    # Production vs development settings
+    is_production = os.environ.get('RENDER')
+    if is_production:
+        app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8050)), debug=False)
+    else:
+        app.run(debug=True)
 
 if __name__ == "__main__":
     main()
