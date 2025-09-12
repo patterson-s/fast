@@ -5,26 +5,65 @@ import os
 import sys
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import dash
-from dash import dcc, html, Input, Output, callback, dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
+from urllib.parse import urlencode, urlparse, parse_qs
+
+# =========================
+# Config (bins, labels, colors)
+# =========================
+# Outcome-probability (pie)
+PIE_BINS   = [-float("inf"), 0.01, 0.5, 0.99, float("inf")]
+PIE_LABELS = [
+    "Near-certain no conflict",
+    "Improbable conflict",
+    "Probable conflict",
+    "Near-certain conflict",
+]
+PIE_COLORS = {
+    "Near-certain no conflict": "green",
+    "Improbable conflict": "blue",
+    "Probable conflict": "orange",
+    "Near-certain conflict": "red",
+}
+
+# Predicted-count bands (waffle)
+BAND_BINS   = [-0.1, 0, 10, 100, 1000, 10000, float("inf")]
+BAND_LABELS = ["0", "1–10", "11–100", "101–1,000", "1,001–10,000", "10,001+"]
+BAND_COLORS = {
+    "0":            "#6baed6",
+    "1–10":         "#74c476",
+    "11–100":       "#fd8d3c",
+    "101–1,000":    "#9e9ac8",
+    "1,001–10,000": "#e34a33",
+    "10,001+":      "#636363",
+}
+
+WAFFLE_COLS = 12     # tiles per row
+WAFFLE_GAP  = 0.0    # inter-tile gap; keep tight
+WAFFLE_CELL = 1.0    # tile size
 
 DEF_PARQUET = Path(__file__).resolve().parent / "data" / "FAST-Forecast.parquet"
 
+
+# =========================
+# Data loading & prep
+# =========================
 def load_dataframe(parquet_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(parquet_path)
-    required = {"name", "isoab", "dates", "predicted", "cumulative_outcome_n", "outcome_p"}
+    required = {"name", "isoab", "dates", "predicted", "cumulative_outcome_n", "outcome_p", "outcome_n"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Parquet missing expected columns: {missing}")
 
-    parsed = pd.to_datetime(df["dates"].astype(str), errors="coerce", infer_datetime_format=True)
+    parsed = pd.to_datetime(df["dates"].astype(str), errors="coerce")
     bad_mask = parsed.isna() & df["dates"].astype(str).str.match(r"^\d{6}$").fillna(False)
     parsed.loc[bad_mask] = pd.to_datetime(df.loc[bad_mask, "dates"].astype(str), format="%Y%m", errors="coerce")
     df["_month"] = parsed.dt.to_period("M").dt.to_timestamp() + MonthEnd(0)
@@ -32,70 +71,88 @@ def load_dataframe(parquet_path: Path) -> pd.DataFrame:
     df = df.sort_values(["name", "_month"]).reset_index(drop=True)
     return df
 
+
 def prepare_map_data(df: pd.DataFrame) -> pd.DataFrame:
     map_data = df.groupby(["name", "isoab"]).agg({
         "predicted": "sum",
         "_month": ["min", "max"]
     }).reset_index()
-    
     map_data.columns = ["name", "iso3", "total_predicted", "horizon_start", "horizon_end"]
     map_data["log_predicted"] = np.log1p(map_data["total_predicted"])
     return map_data
 
-def create_country_report_data(df_country: pd.DataFrame) -> Dict[str, Any]:
-    if df_country.empty:
-        return {}
-        
-    name = df_country["name"].iloc[0]
-    iso = df_country["isoab"].iloc[0]
-    horizon_start = df_country["_month"].min()
-    horizon_end = df_country["_month"].max()
-    
-    total_pred = df_country["predicted"].sum()
-    max_month_row = df_country.loc[df_country["predicted"].idxmax()]
-    max_month = max_month_row["_month"]
-    max_value = max_month_row["predicted"]
-    
-    p = df_country["outcome_p"].fillna(0.0)
-    n = len(p)
-    hi = (p >= 0.90).sum()
-    mid = ((p >= 0.50) & (p < 0.90)).sum()
-    low = ((p > 0.0) & (p < 0.50)).sum()
-    zero = (p == 0.0).sum()
-    
-    monthly_data = df_country[["_month", "predicted", "cumulative_outcome_n", "outcome_p"]].copy()
-    monthly_data["month_str"] = monthly_data["_month"].dt.strftime("%Y-%m")
-    monthly_data["predicted_fmt"] = monthly_data["predicted"].apply(lambda x: f"{int(round(float(x))):,}")
-    monthly_data["cumulative_fmt"] = monthly_data["cumulative_outcome_n"].apply(lambda x: f"{int(round(float(x))):,}")
-    monthly_data["outcome_p_fmt"] = monthly_data["outcome_p"].apply(lambda x: f"{100.0*float(x):.1f}%" if pd.notna(x) else "0.0%")
-    
-    return {
-        "name": name,
-        "iso": iso,
-        "horizon_start": horizon_start.strftime("%b %Y"),
-        "horizon_end": horizon_end.strftime("%b %Y"),
-        "total_predicted": f"{int(round(total_pred)):,}",
-        "max_month": max_month.strftime("%b %Y"),
-        "max_value": f"{int(round(max_value)):,}",
-        "risk_high": f"{hi}/{n}",
-        "risk_medium": f"{mid}/{n}",
-        "risk_low": f"{low}/{n}",
-        "risk_zero": f"{zero}/{n}",
-        "monthly_data": monthly_data.to_dict('records')
-    }
 
-def resolve_country_from_iso(df: pd.DataFrame, iso3: str) -> Optional[pd.DataFrame]:
-    if not iso3:
+def month_options(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    # Build dropdown options [{label: 'YYYY-MM', value: outcome_n}, ...]
+    small = df[["_month", "outcome_n"]].drop_duplicates().sort_values("_month")
+    return [{"label": m.strftime("%Y-%m"), "value": int(n)} for m, n in zip(small["_month"], small["outcome_n"])]
+
+
+def latest_month_idx(df: pd.DataFrame) -> int:
+    small = df[["_month", "outcome_n"]].drop_duplicates().sort_values("_month")
+    return int(small["outcome_n"].iloc[-1])
+
+
+# =========================
+# Categorization helpers
+# =========================
+def categorize_prob_single(p: float) -> str:
+    if p <= 0.01:
+        return "Near-certain no conflict"
+    elif p < 0.5:
+        return "Improbable conflict"
+    elif p < 0.99:
+        return "Probable conflict"
+    else:
+        return "Near-certain conflict"
+
+
+def categorize_band_single(pred: float) -> str:
+    edges = BAND_BINS
+    labs = BAND_LABELS
+    for i in range(len(labs)):
+        # include lowest edge
+        if edges[i] < pred <= edges[i+1] or (i == 0 and pred == edges[0]):
+            return labs[i]
+    return labs[-1]
+
+
+def pie_counts_for_month(df: pd.DataFrame, month_idx: int) -> pd.Series:
+    dfm = df.loc[df["outcome_n"] == month_idx]
+    if dfm.empty:
+        return pd.Series(0, index=PIE_LABELS, dtype=int)
+    cats = pd.cut(dfm["outcome_p"].fillna(0.0),
+                  bins=PIE_BINS, labels=PIE_LABELS,
+                  right=True, include_lowest=True)
+    return cats.value_counts().reindex(PIE_LABELS, fill_value=0)
+
+
+def waffle_counts_for_month(df: pd.DataFrame, month_idx: int) -> pd.Series:
+    dfm = df.loc[df["outcome_n"] == month_idx]
+    if dfm.empty:
+        return pd.Series(0, index=BAND_LABELS, dtype=int)
+    bands = pd.cut(dfm["predicted"].fillna(0.0),
+                   bins=BAND_BINS, labels=BAND_LABELS,
+                   include_lowest=True)
+    return bands.value_counts().reindex(BAND_LABELS, fill_value=0)
+
+
+def find_country_row(df: pd.DataFrame, month_idx: int, iso3: str) -> Optional[pd.Series]:
+    dfm = df.loc[(df["outcome_n"] == month_idx) & (df["isoab"].str.upper() == iso3.upper())]
+    if dfm.empty:
         return None
-    iso_match = df[df["isoab"].str.upper() == iso3.upper()]
-    return iso_match.copy() if len(iso_match) > 0 else None
+    return dfm.iloc[0]
 
+
+# =========================
+# Figures
+# =========================
 def create_world_map(map_data: pd.DataFrame) -> go.Figure:
     if map_data.empty:
-        return go.Figure().add_annotation(text="No data available", 
-                                        xref="paper", yref="paper",
-                                        x=0.5, y=0.5, showarrow=False)
-    
+        return go.Figure().add_annotation(text="No data available",
+                                          xref="paper", yref="paper",
+                                          x=0.5, y=0.5, showarrow=False)
+
     fig = px.choropleth(
         map_data,
         locations="iso3",
@@ -116,158 +173,363 @@ def create_world_map(map_data: pd.DataFrame) -> go.Figure:
             'horizon_end': 'Horizon End'
         }
     )
-    
     fig.update_layout(
-        title={
-            'text': "Conflict Forecast Map - Click Country for Details",
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {'size': 20}
-        },
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            projection_type='natural earth'
-        ),
-        height=600,
-        margin=dict(l=0, r=0, t=50, b=0)
+        title={'text': "Conflict Forecast Map - Click a country",
+               'x': 0.5, 'xanchor': 'center', 'font': {'size': 20}},
+        geo=dict(showframe=False, showcoastlines=True, projection_type='natural earth'),
+        height=600, margin=dict(l=0, r=0, t=50, b=0)
     )
-    
     return fig
 
-def create_app(df: pd.DataFrame) -> dash.Dash:
-    app = dash.Dash(__name__)
-    app.title = "FAST-cm Interactive Map"
-    
-    map_data = prepare_map_data(df)
-    
-    app.layout = html.Div([
-        html.H1("FAST-cm Conflict Forecast Interactive Map", 
-               style={'textAlign': 'center', 'color': '#333', 'marginBottom': '30px'}),
-        
-        dcc.Graph(
-            id='world-map',
-            figure=create_world_map(map_data),
-            config={'displayModeBar': True}
-        ),
-        
-        dcc.Store(id='country-data-store'),
-        
-        html.Div(id='country-modal', style={'display': 'none'}, children=[
-            html.Div(
-                style={
-                    'position': 'fixed',
-                    'top': '0',
-                    'left': '0',
-                    'width': '100%',
-                    'height': '100%',
-                    'backgroundColor': 'rgba(0,0,0,0.5)',
-                    'zIndex': '1000',
-                    'display': 'flex',
-                    'alignItems': 'center',
-                    'justifyContent': 'center'
-                },
-                children=[
-                    html.Div(
-                        style={
-                            'backgroundColor': 'white',
-                            'padding': '20px',
-                            'borderRadius': '10px',
-                            'maxWidth': '800px',
-                            'maxHeight': '80vh',
-                            'overflow': 'auto',
-                            'position': 'relative'
-                        },
-                        children=[
-                            html.Button('×', 
-                                      id='close-modal',
-                                      style={
-                                          'position': 'absolute',
-                                          'top': '10px',
-                                          'right': '15px',
-                                          'background': 'none',
-                                          'border': 'none',
-                                          'fontSize': '24px',
-                                          'cursor': 'pointer',
-                                          'color': '#666'
-                                      }),
-                            html.Div(id='modal-content')
-                        ]
-                    )
-                ]
+
+def build_pie_figure(cat_counts: pd.Series,
+                     highlight_label: Optional[str],
+                     month_label: str) -> go.Figure:
+    values = cat_counts.values.tolist()
+    labels = cat_counts.index.tolist()
+
+    # Pull out the highlighted slice slightly
+    pulls = [0.08 if (highlight_label is not None and lab == highlight_label) else 0 for lab in labels]
+    marker_lines = [2 if (highlight_label is not None and lab == highlight_label) else 0 for lab in labels]
+
+    fig = go.Figure(
+        data=[
+            go.Pie(
+                labels=labels,
+                values=values,
+                sort=False,
+                direction="clockwise",
+                hole=0.0,
+                pull=pulls,
+                textinfo="percent",
+                textfont=dict(color="white", size=12),
+                marker=dict(
+                    colors=[PIE_COLORS[lab] for lab in labels],
+                    line=dict(color=["black" if w > 0 else "white" for w in marker_lines],
+                              width=marker_lines),
+                ),
             )
+        ]
+    )
+    title = f"Risk categories for month {month_label}"
+    fig.update_layout(
+        title=dict(text=title, x=0.5, xanchor="center"),
+        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(l=10, r=10, t=50, b=10),
+        height=420,
+    )
+
+    # Optional annotation for highlight
+    if highlight_label is not None and highlight_label in labels:
+        fig.add_annotation(
+            text=f"Highlighted: {highlight_label}",
+            xref="paper", yref="paper",
+            x=0.02, y=0.98, showarrow=False, align="left",
+            bgcolor="rgba(255,255,255,0.6)", bordercolor="black", borderwidth=1
+        )
+
+    return fig
+
+
+def build_waffle_figure(band_counts: pd.Series,
+                        highlight_band: Optional[str],
+                        month_label: str,
+                        cols: int = WAFFLE_COLS,
+                        cell: float = WAFFLE_CELL,
+                        gap: float = WAFFLE_GAP) -> go.Figure:
+    """
+    Create a vertical waffle made of square markers; top band at top.
+    One Scatter trace per band keeps legend clean.
+    """
+    # Order top->bottom (reverse so highest band appears at the top)
+    order = BAND_LABELS[::-1]
+
+    # Compute stacking rows per band
+    rows_per_band = {lab: int(np.ceil(int(band_counts[lab]) / cols)) for lab in order}
+
+    # Build coordinates
+    traces = []
+    y_offset = 0.0
+    for lab in order:
+        n = int(band_counts[lab])
+        if n <= 0:
+            # still reserve a faint separator line
+            y_offset += gap  # small spacer
+            continue
+
+        xs, ys, line_widths = [], [], []
+        for i in range(n):
+            r = i // cols  # row index within band
+            c = i % cols   # column index
+            x = c * (cell + gap)
+            y = y_offset + r * (cell + gap)
+
+            xs.append(x)
+            ys.append(-y)  # invert y so top band plots at top
+            # Thicker outline for the first tile of the highlight band
+            if highlight_band is not None and lab == highlight_band and i == 0:
+                line_widths.append(2.0)
+            else:
+                line_widths.append(0.6)
+
+        # Push a trace for this band (if there are points)
+        if xs:
+            traces.append(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    mode="markers",
+                    name=lab,
+                    hovertemplate=f"Band: {lab}<br>Tile %{{pointNumber}}<extra></extra>",
+                    marker=dict(
+                        symbol="square",
+                        size=16,  # adjust to taste; visual tile size
+                        color=BAND_COLORS[lab],
+                        line=dict(color="black", width=line_widths),
+                    ),
+                    showlegend=True
+                )
+            )
+
+        # Advance y_offset by the band height
+        y_offset += max(rows_per_band[lab], 1) * (cell + gap) + gap  # band gap
+
+    # Figure frame
+    fig = go.Figure(data=traces)
+    # Set axis ranges to fit snugly
+    max_cols = cols * (cell + gap)
+    max_rows = y_offset
+    fig.update_xaxes(visible=False, range=[-cell, max_cols + cell])
+    fig.update_yaxes(visible=False, range=[-(max_rows + cell), cell])
+
+    fig.update_layout(
+        title=dict(text=f"Vertical waffle — bands by color — {month_label}", x=0.5, xanchor="center"),
+        legend=dict(orientation="v", x=1.02, y=1.0),
+        margin=dict(l=10, r=150, t=50, b=10),
+        height=520,
+    )
+    return fig
+
+
+# =========================
+# App & Pages
+# =========================
+def create_app(df: pd.DataFrame) -> dash.Dash:
+    app = dash.Dash(__name__, suppress_callback_exceptions=True)
+    app.title = "FAST-cm Interactive Visualizer (Pie + Waffle)"
+
+    # Precompute shared bits
+    map_data = prepare_map_data(df)
+    month_opts = month_options(df)
+    latest_idx = latest_month_idx(df)
+
+    # Build a sample country page so Dash knows those IDs exist
+    sample_iso = (map_data["iso3"].iloc[0] if not map_data.empty else "USA")
+    app.validation_layout = html.Div([
+    # Map page
+    html.Div([
+        dcc.Location(id="url"),
+        html.Div(id="page-content"),
+        dcc.Graph(id='world-map')
+    ]),
+    # Country page (with all the dynamic IDs)
+    html.Div([
+        dcc.Dropdown(id="month-dropdown", options=month_opts, value=latest_idx),
+        html.Div(id="info-strip"),
+        dcc.Graph(id="pie-fig"),
+        dcc.Graph(id="waffle-fig"),
         ])
     ])
-    
-    @app.callback(
-        [Output('country-modal', 'style'),
-         Output('modal-content', 'children'),
-         Output('country-data-store', 'data')],
-        [Input('world-map', 'clickData'),
-         Input('close-modal', 'n_clicks')]
+
+
+    # Simple store to carry country identities if needed
+    app.layout = html.Div(
+        [
+            dcc.Location(id="url"),
+            dcc.Store(id="store-country-name"),
+            html.Div(id="page-content"),
+        ],
+        style={"maxWidth": "1200px", "margin": "0 auto"}
     )
-    def handle_map_interaction(clickData, close_clicks):
-        ctx = dash.callback_context
-        if not ctx.triggered:
-            return {'display': 'none'}, [], {}
-        
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        if trigger_id == 'close-modal':
-            return {'display': 'none'}, [], {}
-        
-        if trigger_id == 'world-map' and clickData:
-            iso3 = clickData['points'][0]['location']
-            df_country = resolve_country_from_iso(df, iso3)
-            
-            if df_country is None or df_country.empty:
-                return {'display': 'none'}, [], {}
-            
-            report_data = create_country_report_data(df_country)
-            
-            modal_content = [
-                html.H2(f"{report_data['name']} ({report_data['iso']})", 
-                       style={'color': '#333', 'marginBottom': '20px'}),
-                
-                html.Div([
-                    html.P([html.Strong("Forecast Horizon: "), f"{report_data['horizon_start']} → {report_data['horizon_end']}"]),
-                    html.P([html.Strong("Total Predicted Fatalities: "), report_data['total_predicted']]),
-                    html.P([html.Strong("Peak Monthly Forecast: "), f"{report_data['max_value']} ({report_data['max_month']})"]),
-                ], style={'marginBottom': '20px'}),
-                
-                html.H4("Risk Profile (Pr[fatalities > threshold] by month)", 
-                       style={'color': '#555', 'marginBottom': '10px'}),
-                html.Ul([
-                    html.Li([html.Strong("High (≥90%): "), report_data['risk_high']]),
-                    html.Li([html.Strong("Medium (50-<90%): "), report_data['risk_medium']]),
-                    html.Li([html.Strong("Low (>0-<50%): "), report_data['risk_low']]),
-                    html.Li([html.Strong("Near-zero (=0%): "), report_data['risk_zero']]),
-                ], style={'marginBottom': '20px'}),
-                
-                html.H4("Monthly Forecasts", style={'color': '#555', 'marginBottom': '10px'}),
-                dash_table.DataTable(
-                    data=report_data['monthly_data'],
-                    columns=[
-                        {"name": "Month", "id": "month_str"},
-                        {"name": "Predicted", "id": "predicted_fmt"},
-                        {"name": "Cumulative", "id": "cumulative_fmt"},
-                        {"name": "Pr(>threshold)", "id": "outcome_p_fmt"}
-                    ],
-                    style_cell={'textAlign': 'center', 'padding': '10px'},
-                    style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold'},
-                    style_data={'backgroundColor': '#ffffff'},
-                    style_table={'overflowX': 'auto'}
-                )
+
+    # ----- Page layouts
+    def map_page_layout() -> html.Div:
+        return html.Div(
+            [
+                html.H1("FAST-cm Conflict Forecast — World Map",
+                        style={'textAlign': 'center', 'color': '#333', 'marginBottom': '20px'}),
+                dcc.Graph(
+                    id='world-map',
+                    figure=create_world_map(map_data),
+                    config={'displayModeBar': True}
+                ),
+                html.Div("Tip: Click a country to open the full detail page.",
+                         style={"textAlign": "center", "color": "#666"})
             ]
-            
-            return {'display': 'block'}, modal_content, report_data
-        
-        return {'display': 'none'}, [], {}
-    
+        )
+
+    def country_page_layout(iso3: str, query_month: Optional[int]) -> html.Div:
+        # Basic country label (we'll resolve the proper display name shortly)
+        country_name = df.loc[df["isoab"].str.upper() == iso3.upper(), "name"].head(1)
+        display_name = country_name.iloc[0] if not country_name.empty else iso3.upper()
+
+        # month dropdown defaults
+        default_month = query_month if query_month is not None else latest_idx
+
+        return html.Div(
+            [
+                html.Div(
+                    [
+                        html.H2(f"{display_name} ({iso3.upper()}) — Detail View",
+                                style={'margin': 0, 'color': '#333'}),
+                        html.Div(
+                            dcc.Link("← Back to map", href="/"),
+                            style={'marginTop': '4px', 'color': '#555'}
+                        ),
+                    ],
+                    style={"display": "flex", "flexDirection": "column", "gap": "2px", "marginBottom": "12px"},
+                ),
+
+                # Controls
+                html.Div(
+                    [
+                        html.Div("Select month:", style={"fontWeight": 600, "marginRight": "8px"}),
+                        dcc.Dropdown(
+                            id="month-dropdown",
+                            options=month_opts,
+                            value=default_month,
+                            clearable=False,
+                            searchable=False,
+                            style={"width": "240px"}
+                        ),
+                    ],
+                    style={"display": "flex", "alignItems": "center", "gap": "8px", "marginBottom": "10px"}
+                ),
+
+                # Info strip
+                html.Div(id="info-strip", style={
+                    "backgroundColor": "#f8f9fa",
+                    "border": "1px solid #e9ecef",
+                    "borderRadius": "8px",
+                    "padding": "10px 12px",
+                    "marginBottom": "10px",
+                    "color": "#333",
+                    "fontSize": "14px"
+                }),
+
+                # Two charts
+                html.Div(
+                    [
+                        dcc.Graph(id="pie-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                        dcc.Graph(id="waffle-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                    ],
+                    style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}
+                ),
+            ]
+        )
+
+    # ----- Router
+    @app.callback(Output("page-content", "children"), Input("url", "pathname"), State("url", "search"))
+    def route(pathname, search):
+        if pathname is None or pathname == "/":
+            return map_page_layout()
+
+        # /country/<ISO3>
+        parts = [p for p in pathname.split("/") if p]
+        if len(parts) == 2 and parts[0] == "country":
+            iso3 = parts[1]
+            # parse ?month=
+            q = parse_qs(search[1:], keep_blank_values=True) if search else {}
+            month_idx = None
+            if "month" in q:
+                try:
+                    month_idx = int(q["month"][0])
+                except Exception:
+                    month_idx = None
+            return country_page_layout(iso3, month_idx)
+
+        # fallback
+        return html.Div(
+            [html.H2("Page not found"), dcc.Link("Go to map", href="/")],
+            style={"textAlign": "center", "padding": "40px"}
+        )
+
+    # ----- Map click → navigate to /country/ISO3?month=<latest>
+    @app.callback(
+        Output("url", "href"),
+        Input("world-map", "clickData"),
+        prevent_initial_call=True
+    )
+    def on_map_click(clickData):
+        if not clickData:
+            return dash.no_update
+        iso3 = clickData["points"][0]["location"]
+        query = urlencode({"month": latest_idx})
+        return f"/country/{iso3}?{query}"
+
+    # ----- Country page computations → figures + info
+    @app.callback(
+        Output("pie-fig", "figure"),
+        Output("waffle-fig", "figure"),
+        Output("info-strip", "children"),
+        Input("month-dropdown", "value"),
+        Input("url", "pathname"),
+    )
+    def update_country_figures(month_idx, pathname):
+        # Guard: only run on country page
+        parts = [p for p in (pathname or "").split("/") if p]
+        if len(parts) != 2 or parts[0] != "country":
+            return go.Figure(), go.Figure(), dash.no_update
+        iso3 = parts[1].upper()
+
+        # Month label (YYYY-MM) for titles
+        month_row = df.loc[df["outcome_n"] == int(month_idx), ["_month"]].drop_duplicates()
+        if month_row.empty:
+            month_label = "Unknown"
+        else:
+            month_label = month_row["_month"].iloc[0].strftime("%Y-%m")
+
+        # Month-global counts
+        pie_counts = pie_counts_for_month(df, int(month_idx))
+        waffle_counts = waffle_counts_for_month(df, int(month_idx))
+
+        # Target row & highlights
+        target = find_country_row(df, int(month_idx), iso3)
+        if target is None:
+            # Build figures without highlight; info message about missing row
+            pie_fig = build_pie_figure(pie_counts, None, month_label)
+            waffle_fig = build_waffle_figure(waffle_counts, None, month_label)
+            info = html.Span([
+                html.B("Note: "), f"No record for {iso3} in {month_label}. ",
+                "Charts show month-level distribution across all countries."
+            ])
+            return pie_fig, waffle_fig, info
+
+        country_name = str(target["name"])
+        p_val = float(target.get("outcome_p", 0.0))
+        pred_val = float(target.get("predicted", 0.0))
+        cat = categorize_prob_single(p_val)
+        band = categorize_band_single(pred_val)
+
+        pie_fig = build_pie_figure(pie_counts, cat, month_label)
+        waffle_fig = build_waffle_figure(waffle_counts, band, month_label)
+
+        info = html.Span([
+            html.B("Country: "), f"{country_name} ({iso3})  •  ",
+            html.B("Month: "), f"{month_label}  •  ",
+            html.B("Pr(>threshold): "), f"{p_val:.3f} → {cat}  •  ",
+            html.B("Predicted fatalities: "), f"{pred_val:.1f} → {band}"
+        ])
+        return pie_fig, waffle_fig, info
+
     return app
 
+
+# =========================
+# Entrypoint
+# =========================
 def main():
-    parser = argparse.ArgumentParser(description="FAST-cm interactive map")
+    parser = argparse.ArgumentParser(description="FAST-cm interactive visualizer (map + full country view)")
     parser.add_argument(
         "--parquet",
         type=str,
@@ -275,26 +537,27 @@ def main():
         help="Path to FAST-Forecast.parquet"
     )
     args = parser.parse_args()
-    
+
     parquet_path = Path(args.parquet)
     if not parquet_path.exists():
         print(f"Parquet not found: {parquet_path}")
         sys.exit(1)
-    
+
     try:
         df = load_dataframe(parquet_path)
     except Exception as e:
         print(f"Error loading parquet: {e}")
         sys.exit(1)
-    
+
     app = create_app(df)
-    
+
     # Production vs development settings
     is_production = os.environ.get('RENDER')
     if is_production:
         app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8050)), debug=False)
     else:
         app.run(debug=True)
+
 
 if __name__ == "__main__":
     main()
