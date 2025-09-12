@@ -6,7 +6,8 @@ import sys
 import argparse
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
-
+from functools import lru_cache
+import time
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.express as px
@@ -142,6 +143,29 @@ def find_country_row(df: pd.DataFrame, month_idx: int, iso3: str) -> Optional[pd
     if dfm.empty:
         return None
     return dfm.iloc[0]
+
+# =========================
+# Markdown loader (mtime-aware)
+# =========================
+MODEL_DETAILS_PATH = Path(__file__).resolve().parent / "docs" / "model_details.md"
+
+@lru_cache(maxsize=1)
+def _read_model_details_cached(_cache_buster: float) -> str:
+    """Internal: cached read so we don't hit disk every render."""
+    if not MODEL_DETAILS_PATH.exists():
+        return "*(model_details.md not found — create docs/model_details.md)*"
+    return MODEL_DETAILS_PATH.read_text(encoding="utf-8")
+
+def read_model_details() -> str:
+    """
+    Read markdown, but let edits during development show up automatically.
+    We pass the file's mtime into the cache key so the cache invalidates on changes.
+    """
+    try:
+        mtime = MODEL_DETAILS_PATH.stat().st_mtime
+    except FileNotFoundError:
+        mtime = 0.0
+    return _read_model_details_cached(mtime)
 
 
 # =========================
@@ -315,6 +339,7 @@ def build_waffle_figure(band_counts: pd.Series,
 # App & Pages
 # =========================
 def create_app(df: pd.DataFrame) -> dash.Dash:
+    # Allow IDs that only appear on certain routes
     app = dash.Dash(__name__, suppress_callback_exceptions=True)
     app.title = "FAST-cm Interactive Visualizer (Pie + Waffle)"
 
@@ -323,26 +348,25 @@ def create_app(df: pd.DataFrame) -> dash.Dash:
     month_opts = month_options(df)
     latest_idx = latest_month_idx(df)
 
-    # Build a sample country page so Dash knows those IDs exist
+    # Validation layout so Dash knows about ALL IDs used across pages
     sample_iso = (map_data["iso3"].iloc[0] if not map_data.empty else "USA")
     app.validation_layout = html.Div([
-    # Map page
-    html.Div([
+        # Map page bits
         dcc.Location(id="url"),
         html.Div(id="page-content"),
-        dcc.Graph(id='world-map')
-    ]),
-    # Country page (with all the dynamic IDs)
-    html.Div([
+        dcc.Graph(id="world-map"),
+        # Country page bits
         dcc.Dropdown(id="month-dropdown", options=month_opts, value=latest_idx),
         html.Div(id="info-strip"),
         dcc.Graph(id="pie-fig"),
         dcc.Graph(id="waffle-fig"),
-        ])
+        # Details panel bits
+        html.Button("Model details and selection criteria", id="details-toggle"),
+        html.Div(id="details-panel"),
+        html.Div(id="details-close"),
     ])
 
-
-    # Simple store to carry country identities if needed
+    # Simple shell
     app.layout = html.Div(
         [
             dcc.Location(id="url"),
@@ -356,38 +380,52 @@ def create_app(df: pd.DataFrame) -> dash.Dash:
     def map_page_layout() -> html.Div:
         return html.Div(
             [
-                html.H1("FAST-cm Conflict Forecast — World Map",
-                        style={'textAlign': 'center', 'color': '#333', 'marginBottom': '20px'}),
+                html.H1(
+                    "FAST-cm Conflict Forecast — World Map",
+                    style={'textAlign': 'center', 'color': '#333', 'marginBottom': '20px'}
+                ),
                 dcc.Graph(
                     id='world-map',
                     figure=create_world_map(map_data),
                     config={'displayModeBar': True}
                 ),
-                html.Div("Tip: Click a country to open the full detail page.",
-                         style={"textAlign": "center", "color": "#666"})
+                html.Div(
+                    "Tip: Click a country to open the full detail page.",
+                    style={"textAlign": "center", "color": "#666"}
+                ),
             ]
         )
 
     def country_page_layout(iso3: str, query_month: Optional[int]) -> html.Div:
-        # Basic country label (we'll resolve the proper display name shortly)
+        # Resolve display name
         country_name = df.loc[df["isoab"].str.upper() == iso3.upper(), "name"].head(1)
         display_name = country_name.iloc[0] if not country_name.empty else iso3.upper()
 
-        # month dropdown defaults
+        # Month default
         default_month = query_month if query_month is not None else latest_idx
+
+        # Load the static markdown content
+        model_md = read_model_details()
 
         return html.Div(
             [
                 html.Div(
                     [
-                        html.H2(f"{display_name} ({iso3.upper()}) — Detail View",
-                                style={'margin': 0, 'color': '#333'}),
+                        html.H2(
+                            f"{display_name} ({iso3.upper()}) — Detail View",
+                            style={'margin': 0, 'color': '#333'}
+                        ),
                         html.Div(
                             dcc.Link("← Back to map", href="/"),
                             style={'marginTop': '4px', 'color': '#555'}
                         ),
                     ],
-                    style={"display": "flex", "flexDirection": "column", "gap": "2px", "marginBottom": "12px"},
+                    style={
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "2px",
+                        "marginBottom": "12px",
+                    },
                 ),
 
                 # Controls
@@ -406,16 +444,71 @@ def create_app(df: pd.DataFrame) -> dash.Dash:
                     style={"display": "flex", "alignItems": "center", "gap": "8px", "marginBottom": "10px"}
                 ),
 
+                # Model details toggle + collapsible panel
+                html.Div(
+                    [
+                        html.Button(
+                            "Model details and selection criteria",
+                            id="details-toggle",
+                            n_clicks=0,
+                            **{"aria-controls": "details-panel", "aria-expanded": "false"},
+                            style={
+                                "padding": "8px 12px",
+                                "borderRadius": "8px",
+                                "border": "1px solid #dee2e6",
+                                "backgroundColor": "#f8f9fa",
+                                "cursor": "pointer",
+                                "fontWeight": 600,
+                            },
+                        ),
+                        html.Div(
+                            id="details-panel",
+                            role="region",
+                            **{"aria-label": "Model details and selection criteria"},
+                            style={
+                                "display": "none",           # hidden by default; toggled via callback
+                                "marginTop": "8px",
+                                "padding": "12px",
+                                "border": "1px solid #e9ecef",
+                                "borderRadius": "8px",
+                                "backgroundColor": "#fcfcfd",
+                                "maxHeight": "50vh",
+                                "overflowY": "auto",
+                            },
+                            children=[
+                                html.Div(
+                                    "×",
+                                    id="details-close",
+                                    title="Close",
+                                    style={
+                                        "position": "sticky",
+                                        "top": 0,
+                                        "float": "right",
+                                        "cursor": "pointer",
+                                        "fontSize": "20px",
+                                        "color": "#666",
+                                    },
+                                ),
+                                dcc.Markdown(model_md),
+                            ],
+                        ),
+                    ],
+                    style={"marginBottom": "10px"}
+                ),
+
                 # Info strip
-                html.Div(id="info-strip", style={
-                    "backgroundColor": "#f8f9fa",
-                    "border": "1px solid #e9ecef",
-                    "borderRadius": "8px",
-                    "padding": "10px 12px",
-                    "marginBottom": "10px",
-                    "color": "#333",
-                    "fontSize": "14px"
-                }),
+                html.Div(
+                    id="info-strip",
+                    style={
+                        "backgroundColor": "#f8f9fa",
+                        "border": "1px solid #e9ecef",
+                        "borderRadius": "8px",
+                        "padding": "10px 12px",
+                        "marginBottom": "10px",
+                        "color": "#333",
+                        "fontSize": "14px",
+                    },
+                ),
 
                 # Two charts
                 html.Div(
@@ -427,6 +520,135 @@ def create_app(df: pd.DataFrame) -> dash.Dash:
                 ),
             ]
         )
+
+    # ----- Router
+    @app.callback(Output("page-content", "children"), Input("url", "pathname"), State("url", "search"))
+    def route(pathname, search):
+        if pathname is None or pathname == "/":
+            return map_page_layout()
+
+        # /country/<ISO3>
+        parts = [p for p in pathname.split("/") if p]
+        if len(parts) == 2 and parts[0] == "country":
+            iso3 = parts[1]
+            # parse ?month=
+            q = parse_qs(search[1:], keep_blank_values=True) if search else {}
+            month_idx = None
+            if "month" in q:
+                try:
+                    month_idx = int(q["month"][0])
+                except Exception:
+                    month_idx = None
+            return country_page_layout(iso3, month_idx)
+
+        # fallback
+        return html.Div(
+            [html.H2("Page not found"), dcc.Link("Go to map", href="/")],
+            style={"textAlign": "center", "padding": "40px"}
+        )
+
+    # ----- Map click → navigate to /country/ISO3?month=<latest>
+    @app.callback(
+        Output("url", "href"),
+        Input("world-map", "clickData"),
+        prevent_initial_call=True
+    )
+    def on_map_click(clickData):
+        if not clickData:
+            return dash.no_update
+        iso3 = clickData["points"][0]["location"]
+        query = urlencode({"month": latest_idx})
+        return f"/country/{iso3}?{query}"
+
+    # ----- Country page computations → figures + info
+    @app.callback(
+        Output("pie-fig", "figure"),
+        Output("waffle-fig", "figure"),
+        Output("info-strip", "children"),
+        Input("month-dropdown", "value"),
+        Input("url", "pathname"),
+    )
+    def update_country_figures(month_idx, pathname):
+        # Guard: only run on country page
+        parts = [p for p in (pathname or "").split("/") if p]
+        if len(parts) != 2 or parts[0] != "country":
+            return go.Figure(), go.Figure(), dash.no_update
+        iso3 = parts[1].upper()
+
+        # Month label (YYYY-MM) for titles
+        month_row = df.loc[df["outcome_n"] == int(month_idx), ["_month"]].drop_duplicates()
+        if month_row.empty:
+            month_label = "Unknown"
+        else:
+            month_label = month_row["_month"].iloc[0].strftime("%Y-%m")
+
+        # Month-global counts
+        pie_counts = pie_counts_for_month(df, int(month_idx))
+        waffle_counts = waffle_counts_for_month(df, int(month_idx))
+
+        # Target row & highlights
+        target = find_country_row(df, int(month_idx), iso3)
+        if target is None:
+            pie_fig = build_pie_figure(pie_counts, None, month_label)
+            waffle_fig = build_waffle_figure(waffle_counts, None, month_label)
+            info = html.Span([
+                html.B("Note: "), f"No record for {iso3} in {month_label}. ",
+                "Charts show month-level distribution across all countries."
+            ])
+            return pie_fig, waffle_fig, info
+
+        country_name = str(target["name"])
+        p_val = float(target.get("outcome_p", 0.0))
+        pred_val = float(target.get("predicted", 0.0))
+        cat = categorize_prob_single(p_val)
+        band = categorize_band_single(pred_val)
+
+        pie_fig = build_pie_figure(pie_counts, cat, month_label)
+        waffle_fig = build_waffle_figure(waffle_counts, band, month_label)
+
+        info = html.Span([
+            html.B("Country: "), f"{country_name} ({iso3})  •  ",
+            html.B("Month: "), f"{month_label}  •  ",
+            html.B("Pr(>threshold): "), f"{p_val:.3f} → {cat}  •  ",
+            html.B("Predicted fatalities: "), f"{pred_val:.1f} → {band}"
+        ])
+        return pie_fig, waffle_fig, info
+
+    # ----- NEW: Toggle the details panel (button & close "×")
+    @app.callback(
+        Output("details-panel", "style"),
+        Output("details-toggle", "aria-expanded"),
+        Input("details-toggle", "n_clicks"),
+        Input("details-close", "n_clicks"),
+        State("details-panel", "style"),
+        prevent_initial_call=False,
+    )
+    def toggle_details(open_clicks, close_clicks, current_style):
+        # Ensure style dict exists
+        current_style = dict(current_style or {})
+        is_visible = current_style.get("display", "none") != "none"
+
+        # Which control fired?
+        ctx = dash.callback_context
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+
+        # Close explicitly
+        if trigger_id == "details-close":
+            current_style["display"] = "none"
+            return current_style, "false"
+
+        # Toggle via button
+        if trigger_id == "details-toggle":
+            current_style["display"] = "none" if is_visible else "block"
+            return current_style, "true" if not is_visible else "false"
+
+        # Initial render: keep hidden
+        current_style["display"] = "none"
+        return current_style, "false"
+
+    return app
+
+
 
     # ----- Router
     @app.callback(Output("page-content", "children"), Input("url", "pathname"), State("url", "search"))
