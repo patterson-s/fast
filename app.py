@@ -10,4 +10,7 @@ def create_app() -> Dash:
     return app
 
 if __name__ == "__main__":
-    create_app().run(debug=True)
+    import os
+    port = int(os.environ.get("PORT", 8050))
+    # no debug, no reloader in production envs like Render
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

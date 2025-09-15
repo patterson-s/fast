@@ -20,11 +20,25 @@ from figures.map_figure import make_world_map
 from figures.pie_figure import make_pie
 from figures.waffle_figure import make_waffle
 
-# Load once per process
-_df = load_dataframe(DEF_PARQUET)
-_map_data = prepare_map_data(_df)
-_month_opts = month_options(_df)
-_latest_idx = latest_month_idx(_df)
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def _df():
+    # loaded on first use, not at import-time
+    return load_dataframe(DEF_PARQUET)
+
+@lru_cache(maxsize=1)
+def _map_data():
+    return prepare_map_data(_df())
+
+@lru_cache(maxsize=1)
+def _month_opts():
+    return month_options(_df())
+
+@lru_cache(maxsize=1)
+def _latest_idx():
+    return latest_month_idx(_df())
+
 
 # ---------- Page layouts ----------
 
@@ -35,7 +49,7 @@ def _map_page_layout() -> html.Div:
                 "FAST-cm Conflict Forecast — World Map",
                 style={"textAlign": "center", "color": "#333", "marginBottom": "20px"},
             ),
-            dcc.Graph(id="world-map", figure=make_world_map(_map_data), config={"displayModeBar": True}),
+            dcc.Graph(id="world-map", figure=make_world_map(_map_data()), config={"displayModeBar": True}),
             html.Div(
                 "Tip: Click a country to open the full detail page.",
                 style={"textAlign": "center", "color": "#666"},
@@ -46,7 +60,8 @@ def _map_page_layout() -> html.Div:
 def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
     country_name = _df.loc[_df["isoab"].str.upper() == iso3.upper(), "name"].head(1)
     display_name = country_name.iloc[0] if not country_name.empty else iso3.upper()
-    default_month = query_month if query_month is not None else _latest_idx
+    default_month = query_month if query_month is not None else _latest_idx()
+    options=_month_opts(),
     model_md = read_model_details()
 
     return html.Div(
@@ -168,7 +183,7 @@ def on_map_click(clickData):
     if not clickData:
         return dash.no_update
     iso3 = clickData["points"][0]["location"]
-    query = urlencode({"month": _latest_idx})
+    query = urlencode({"month": _latest_idx()})
     return f"/country/{iso3}?{query}"
 
 # ---------- Country page computations → figures + info ----------
@@ -195,7 +210,7 @@ def update_country_figures(month_idx, pathname):
         month_idx_int = _latest_idx
 
     # If the month doesn’t exist in the data, fallback to latest
-    month_rows = _df.loc[_df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
+    month_rows = _df().loc[_df()["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
     if month_rows.empty:
         month_idx_int = _latest_idx
         month_rows = _df.loc[_df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
@@ -203,11 +218,11 @@ def update_country_figures(month_idx, pathname):
     month_label = "Unknown" if month_rows.empty else month_rows["_month"].iloc[0].strftime("%Y-%m")
 
     # Month-global distributions
-    pie_counts = pie_counts_for_month(_df, month_idx_int)
-    waffle_counts = waffle_counts_for_month(_df, month_idx_int)
+    pie_counts = pie_counts_for_month(_df(), month_idx_int)
+    waffle_counts = waffle_counts_for_month(_df(), month_idx_int)
 
     # Row for highlight
-    target = find_country_row(_df, month_idx_int, iso3)
+    target = find_country_row(_df(), month_idx_int, iso3)
     if target is None:
         pie_fig = make_pie(pie_counts, None, month_label)
         waffle_fig = make_waffle(waffle_counts, None, month_label)
