@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 from urllib.parse import urlencode, parse_qs
-from dash import html, dcc, Input, Output, State, callback
+
 import dash
-import pandas as pd
+from dash import dcc, html, Input, Output, State, callback
+from plotly.graph_objects import Figure
 
 from config import DEF_PARQUET
 from data_loader import load_dataframe, prepare_map_data, month_options, latest_month_idx
@@ -29,9 +31,15 @@ _latest_idx = latest_month_idx(_df)
 def _map_page_layout() -> html.Div:
     return html.Div(
         [
-            html.H1("FAST-cm Conflict Forecast — World Map", style={"textAlign": "center", "color": "#333", "marginBottom": "20px"}),
+            html.H1(
+                "FAST-cm Conflict Forecast — World Map",
+                style={"textAlign": "center", "color": "#333", "marginBottom": "20px"},
+            ),
             dcc.Graph(id="world-map", figure=make_world_map(_map_data), config={"displayModeBar": True}),
-            html.Div("Tip: Click a country to open the full detail page.", style={"textAlign": "center", "color": "#666"}),
+            html.Div(
+                "Tip: Click a country to open the full detail page.",
+                style={"textAlign": "center", "color": "#666"},
+            ),
         ]
     )
 
@@ -120,8 +128,10 @@ def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
                 },
             ),
             html.Div(
-                [dcc.Graph(id="pie-fig", config={"displayModeBar": False}, style={"flex": "1"}),
-                 dcc.Graph(id="waffle-fig", config={"displayModeBar": False}, style={"flex": "1"})],
+                [
+                    dcc.Graph(id="pie-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                    dcc.Graph(id="waffle-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                ],
                 style={"display": "flex", "gap": "16px", "flexWrap": "wrap"},
             ),
         ]
@@ -146,7 +156,10 @@ def route(pathname, search):
                 month_idx = None
         return _country_page_layout(iso3, month_idx)
 
-    return html.Div([html.H2("Page not found"), dcc.Link("Go to map", href="/")], style={"textAlign": "center", "padding": "40px"})
+    return html.Div(
+        [html.H2("Page not found"), dcc.Link("Go to map", href="/")],
+        style={"textAlign": "center", "padding": "40px"},
+    )
 
 # ---------- Map click → navigate to /country/ISO3?month=<latest> ----------
 
@@ -168,31 +181,43 @@ def on_map_click(clickData):
     Input("url", "pathname"),
 )
 def update_country_figures(month_idx, pathname):
+    # Must be on /country/<ISO3>
     parts = [p for p in (pathname or "").split("/") if p]
     if len(parts) != 2 or parts[0] != "country":
-        from plotly.graph_objects import Figure
         return Figure(), Figure(), dash.no_update
 
     iso3 = parts[1].upper()
 
-    # Month label
-    month_row = _df.loc[_df["outcome_n"] == int(month_idx), ["_month"]].drop_duplicates()
-    month_label = "Unknown" if month_row.empty else month_row["_month"].iloc[0].strftime("%Y-%m")
+    # Month guard: if missing/invalid, fall back to latest
+    try:
+        month_idx_int = int(month_idx) if month_idx is not None else _latest_idx
+    except Exception:
+        month_idx_int = _latest_idx
 
-    # Month-global counts
-    pie_counts = pie_counts_for_month(_df, int(month_idx))
-    waffle_counts = waffle_counts_for_month(_df, int(month_idx))
+    # If the month doesn’t exist in the data, fallback to latest
+    month_rows = _df.loc[_df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
+    if month_rows.empty:
+        month_idx_int = _latest_idx
+        month_rows = _df.loc[_df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
+
+    month_label = "Unknown" if month_rows.empty else month_rows["_month"].iloc[0].strftime("%Y-%m")
+
+    # Month-global distributions
+    pie_counts = pie_counts_for_month(_df, month_idx_int)
+    waffle_counts = waffle_counts_for_month(_df, month_idx_int)
 
     # Row for highlight
-    target = find_country_row(_df, int(month_idx), iso3)
+    target = find_country_row(_df, month_idx_int, iso3)
     if target is None:
         pie_fig = make_pie(pie_counts, None, month_label)
         waffle_fig = make_waffle(waffle_counts, None, month_label)
-        info = html.Span([html.B("Note: "), f"No record for {iso3} in {month_label}. ",
-                          "Charts show month-level distribution across all countries."])
+        info = html.Span([
+            html.B("Note: "), f"No record for {iso3} in {month_label}. ",
+            "Charts show month-level distribution across all countries."
+        ])
         return pie_fig, waffle_fig, info
 
-    country_name = str(target["name"])
+    country_name = str(target.get("name", iso3))
     p_val = float(target.get("outcome_p", 0.0))
     pred_val = float(target.get("predicted", 0.0))
     cat = categorize_prob_single(p_val)
