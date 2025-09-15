@@ -10,4 +10,4 @@ def create_app() -> Dash:
     return app
 
 if __name__ == "__main__":
-    create_app().run_server(debug=True)
+    create_app().run(debug=True)  # was .run_server(...)
