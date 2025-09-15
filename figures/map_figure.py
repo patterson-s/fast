@@ -34,5 +34,6 @@ def make_world_map(map_data: pd.DataFrame) -> go.Figure:
         geo=dict(showframe=False, showcoastlines=True, projection_type="natural earth"),
         height=600,
         margin=dict(l=0, r=0, t=50, b=0),
+        #autosize=False,
     )
     return fig

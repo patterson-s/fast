@@ -150,8 +150,20 @@ def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
             ),
             html.Div(
                 [
-                    dcc.Graph(id="pie-fig", config={"displayModeBar": False}, style={"flex": "1"}),
-                    dcc.Graph(id="waffle-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                    html.Div(
+                        [
+                            dcc.Graph(id="pie-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                            html.Div(id="pie-caption", style={"marginTop": "6px", "fontSize": "14px", "color": "#333"}),
+                        ],
+                        style={"flex": "1", "minWidth": "380px"},
+                    ),
+                    html.Div(
+                        [
+                            dcc.Graph(id="waffle-fig", config={"displayModeBar": False}, style={"flex": "1"}),
+                            html.Div(id="waffle-caption", style={"marginTop": "6px", "fontSize": "14px", "color": "#333"}),
+                        ],
+                        style={"flex": "1", "minWidth": "380px"},
+                    ),
                 ],
                 style={"display": "flex", "gap": "16px", "flexWrap": "wrap"},
             ),
@@ -201,6 +213,8 @@ def on_map_click(clickData):
     Output("pie-fig", "figure"),
     Output("waffle-fig", "figure"),
     Output("info-strip", "children"),
+    Output("pie-caption", "children"),
+    Output("waffle-caption", "children"),
     Input("month-dropdown", "value"),
     Input("url", "pathname"),
 )
@@ -208,7 +222,8 @@ def update_country_figures(month_idx, pathname):
     # Must be on /country/<ISO3>
     parts = [p for p in (pathname or "").split("/") if p]
     if len(parts) != 2 or parts[0] != "country":
-        return Figure(), Figure(), dash.no_update
+        # 5 outputs: return empty figs + no update on texts if not on country page
+        return Figure(), Figure(), dash.no_update, dash.no_update, dash.no_update
 
     iso3 = parts[1].upper()
 
@@ -232,25 +247,49 @@ def update_country_figures(month_idx, pathname):
     pie_counts = pie_counts_for_month(df, month_idx_int)
     waffle_counts = waffle_counts_for_month(df, month_idx_int)
 
-    # Row for highlight
+    # Row for highlight (country-month record)
     target = find_country_row(df, month_idx_int, iso3)
-    if target is None:
-        pie_fig = make_pie(pie_counts, None, month_label)
-        waffle_fig = make_waffle(waffle_counts, None, month_label)
-        info = html.Span(
-            [html.B("Note: "), f"No record for {iso3} in {month_label}. ", "Charts show month-level distribution across all countries."]
-        )
-        return pie_fig, waffle_fig, info
 
+    # Short titles that should appear inside the figures
+    pie_title = "Figure 1: Conflict Likelihood"
+    waffle_title = "Figure 2: Conflict Intensity"
+
+    if target is None:
+        # No specific country-month record → neutral figures and captions
+        pie_fig = make_pie(pie_counts, None, month_label, title_text=pie_title)
+        waffle_fig = make_waffle(waffle_counts, None, month_label, title_text=waffle_title)
+
+        info = html.Span(
+            [
+                html.B("Note: "),
+                f"No record for {iso3} in {month_label}. ",
+                "Charts show month-level distribution across all countries.",
+            ]
+        )
+
+        prob_notes = (
+            "Figure 1 groups countries by **Pr(fatalities ≥25)** into four categories: "
+            "**≤1%**, **1–50%**, **50–99%**, **≥99%**. Slice sizes show the share of countries in each category this month."
+        )
+        band_notes = (
+            "Figure 2 bins mean predicted fatalities into bands: "
+            "**0**, **1–10**, **11–100**, **101–1,000**, **1,001–10,000**, **10,001+**. "
+            "Each square represents one country."
+        )
+        return pie_fig, waffle_fig, info, dcc.Markdown(prob_notes), dcc.Markdown(band_notes)
+
+    # --- If we have the record, compute the narrative values (already available in your current code) ---
     country_name = str(target.get("name", iso3))
     p_val = float(target.get("outcome_p", 0.0))
     pred_val = float(target.get("predicted", 0.0))
     cat = categorize_prob_single(p_val)
     band = categorize_band_single(pred_val)
 
-    pie_fig = make_pie(pie_counts, cat, month_label)
-    waffle_fig = make_waffle(waffle_counts, band, month_label)
+    # Figures with short titles + highlights
+    pie_fig = make_pie(pie_counts, cat, month_label, title_text=pie_title)
+    waffle_fig = make_waffle(waffle_counts, band, month_label, title_text=waffle_title)
 
+    # Compact info strip (kept as-is)
     info = html.Span(
         [
             html.B("Country: "),
@@ -263,7 +302,35 @@ def update_country_figures(month_idx, pathname):
             f"{pred_val:.1f} → {band}",
         ]
     )
-    return pie_fig, waffle_fig, info
+
+    # Machine-generated captions (narrative + how-it’s-built notes)
+    cap_likelihood = (
+        f"**Figure 1** illustrates how likely **{country_name}** is to experience severe conflict in **{month_label}**. "
+        f"Our forecasts predict that **{country_name}** has a **{p_val:.0%}** chance of suffering **≥25** conflict fatalities in **{month_label}**, "
+        f"which places {country_name} in the **“{cat}”** category."
+    )
+    prob_notes = (
+        "Figure 1 groups each country’s **Pr(fatalities ≥25)** into four categories: "
+        "**≤1%** = Near-certain no conflict; **1–50%** = Improbable conflict; **50–99%** = Probable conflict; "
+        "**≥99%** = Near-certain conflict. Slice sizes show the share of countries in each category this month; "
+        f"{country_name}’s category is highlighted in the chart."
+    )
+    pie_caption = dcc.Markdown(cap_likelihood + "\n\n" + prob_notes)
+
+    cap_intensity = (
+        f"**Figure 2** illustrates how severe the conflict in **{country_name}** is forecasted to be in **{month_label}**. "
+        f"Our forecasts predict **{pred_val:.1f}** fatalities in **{month_label}**. "
+        f"This places {country_name} in the **“{band}”** category."
+    )
+    band_notes = (
+        "Figure 2 bins the **mean predicted fatalities** per country into bands: "
+        "**0**, **1–10**, **11–100**, **101–1,000**, **1,001–10,000**, **10,001+**. "
+        "Each square represents one country in this month; the country’s band is highlighted with a thicker outline."
+    )
+    waffle_caption = dcc.Markdown(cap_intensity + "\n\n" + band_notes)
+
+    return pie_fig, waffle_fig, info, pie_caption, waffle_caption
+
 
 
 # ========== Toggle details panel ==========

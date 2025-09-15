@@ -12,6 +12,7 @@ def make_waffle(
     cols: int = WAFFLE_COLS,
     cell: float = WAFFLE_CELL,
     gap: float = WAFFLE_GAP,
+    title_text: str | None = None,
 ) -> go.Figure:
     order = BAND_LABELS[::-1]  # top band first
     rows_per_band = {lab: int(np.ceil(int(band_counts[lab]) / cols)) for lab in order}
@@ -60,9 +61,11 @@ def make_waffle(
     fig.update_yaxes(visible=False, range=[-(max_rows + cell), cell])
 
     fig.update_layout(
-        title=dict(text=f"Vertical waffle — bands by color — {month_label}", x=0.5, xanchor="center"),
-        legend=dict(orientation="v", x=1.02, y=1.0),
-        margin=dict(l=10, r=150, t=50, b=10),
+        title=dict(text=fig.layout.title.text, x=0.5, xanchor="center"),
+        legend=dict(orientation="h", yanchor="top", y=-0.12, x=0.0),  # legend below plot, inside figure box
+        margin=dict(l=10, r=10, t=50, b=70),
         height=520,
+        autosize=False,
     )
+
     return fig

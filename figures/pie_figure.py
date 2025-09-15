@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Optional
 from config import PIE_COLORS
 
-def make_pie(cat_counts: pd.Series, highlight_label: Optional[str], month_label: str) -> go.Figure:
+def make_pie(cat_counts: pd.Series, highlight_label: Optional[str], month_label: str, title_text: str | None = None) -> go.Figure:
     values = cat_counts.values.tolist()
     labels = cat_counts.index.tolist()
 
@@ -33,10 +33,11 @@ def make_pie(cat_counts: pd.Series, highlight_label: Optional[str], month_label:
         ]
     )
     fig.update_layout(
-        title=dict(text=f"Risk categories for month {month_label}", x=0.5, xanchor="center"),
-        legend=dict(orientation="v", x=1.02, y=0.5),
-        margin=dict(l=10, r=10, t=50, b=10),
+        title=dict(text=fig.layout.title.text, x=0.5, xanchor="center"),
+        legend=dict(orientation="h", yanchor="top", y=-0.12, x=0.0),
+        margin=dict(l=10, r=10, t=50, b=70),
         height=420,
+        autosize=False,
     )
 
     if highlight_label is not None and highlight_label in labels:
