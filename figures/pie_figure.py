@@ -23,7 +23,7 @@ def make_pie(cat_counts: pd.Series, highlight_label: Optional[str], month_label:
                 textinfo="percent",
                 textfont=dict(color="white", size=12),
                 marker=dict(
-                    colors=[PIE_COLORS[lab] for lab in labels],
+                    colors=[PIE_COLORS.get(lab, "#999999") for lab in labels],
                     line=dict(
                         color=["black" if w > 0 else "white" for w in marker_lines],
                         width=marker_lines,
