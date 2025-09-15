@@ -1,47 +1,46 @@
+# callbacks.py
 from __future__ import annotations
 
-from urllib.parse import urlencode, parse_qs
+from functools import lru_cache
+from urllib.parse import parse_qs, urlencode
 
 import dash
-from dash import dcc, html, Input, Output, State, callback
+from dash import Input, Output, State, callback, dcc, html
 from plotly.graph_objects import Figure
 
 from config import DEF_PARQUET
-from data_loader import load_dataframe, prepare_map_data, month_options, latest_month_idx
-from utils import (
-    pie_counts_for_month,
-    waffle_counts_for_month,
-    find_country_row,
-    categorize_prob_single,
-    categorize_band_single,
-    read_model_details,
-)
+from data_loader import latest_month_idx, load_dataframe, month_options, prepare_map_data
 from figures.map_figure import make_world_map
 from figures.pie_figure import make_pie
 from figures.waffle_figure import make_waffle
+from utils import (
+    categorize_band_single,
+    categorize_prob_single,
+    find_country_row,
+    pie_counts_for_month,
+    read_model_details,
+    waffle_counts_for_month,
+)
 
-from functools import lru_cache
-
+# ========= Lazy, cached data accessors (no heavy work at import time) =========
 @lru_cache(maxsize=1)
-def _df():
-    # loaded on first use, not at import-time
+def get_df():
     return load_dataframe(DEF_PARQUET)
 
 @lru_cache(maxsize=1)
-def _map_data():
-    return prepare_map_data(_df())
+def get_map_data():
+    return prepare_map_data(get_df())
 
 @lru_cache(maxsize=1)
-def _month_opts():
-    return month_options(_df())
+def get_month_opts():
+    return month_options(get_df())
 
 @lru_cache(maxsize=1)
-def _latest_idx():
-    return latest_month_idx(_df())
+def get_latest_idx():
+    return latest_month_idx(get_df())
 
 
-# ---------- Page layouts ----------
-
+# ===================== Page layout builders (pure) =====================
 def _map_page_layout() -> html.Div:
     return html.Div(
         [
@@ -49,7 +48,11 @@ def _map_page_layout() -> html.Div:
                 "FAST-cm Conflict Forecast — World Map",
                 style={"textAlign": "center", "color": "#333", "marginBottom": "20px"},
             ),
-            dcc.Graph(id="world-map", figure=make_world_map(_map_data()), config={"displayModeBar": True}),
+            dcc.Graph(
+                id="world-map",
+                figure=make_world_map(get_map_data()),
+                config={"displayModeBar": True},
+            ),
             html.Div(
                 "Tip: Click a country to open the full detail page.",
                 style={"textAlign": "center", "color": "#666"},
@@ -58,17 +61,20 @@ def _map_page_layout() -> html.Div:
     )
 
 def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
-    country_name = _df.loc[_df["isoab"].str.upper() == iso3.upper(), "name"].head(1)
+    df = get_df()
+    country_name = df.loc[df["isoab"].str.upper() == iso3.upper(), "name"].head(1)
     display_name = country_name.iloc[0] if not country_name.empty else iso3.upper()
-    default_month = query_month if query_month is not None else _latest_idx()
-    options=_month_opts(),
+    default_month = query_month if query_month is not None else get_latest_idx()
     model_md = read_model_details()
 
     return html.Div(
         [
             html.Div(
                 [
-                    html.H2(f"{display_name} ({iso3.upper()}) — Detail View", style={"margin": 0, "color": "#333"}),
+                    html.H2(
+                        f"{display_name} ({iso3.upper()}) — Detail View",
+                        style={"margin": 0, "color": "#333"},
+                    ),
                     html.Div(dcc.Link("← Back to map", href="/"), style={"marginTop": "4px", "color": "#555"}),
                 ],
                 style={"display": "flex", "flexDirection": "column", "gap": "2px", "marginBottom": "12px"},
@@ -78,7 +84,7 @@ def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
                     html.Div("Select month:", style={"fontWeight": 600, "marginRight": "8px"}),
                     dcc.Dropdown(
                         id="month-dropdown",
-                        options=_month_opts,
+                        options=get_month_opts(),
                         value=default_month,
                         clearable=False,
                         searchable=False,
@@ -152,7 +158,8 @@ def _country_page_layout(iso3: str, query_month: int | None) -> html.Div:
         ]
     )
 
-# ---------- Router ----------
+
+# ============================== Router ==============================
 
 @callback(Output("page-content", "children"), Input("url", "pathname"), State("url", "search"))
 def route(pathname, search):
@@ -176,17 +183,19 @@ def route(pathname, search):
         style={"textAlign": "center", "padding": "40px"},
     )
 
-# ---------- Map click → navigate to /country/ISO3?month=<latest> ----------
+
+# ========== Map click → navigate to /country/ISO3?month=<latest> ==========
 
 @callback(Output("url", "href"), Input("world-map", "clickData"), prevent_initial_call=True)
 def on_map_click(clickData):
     if not clickData:
         return dash.no_update
     iso3 = clickData["points"][0]["location"]
-    query = urlencode({"month": _latest_idx()})
+    query = urlencode({"month": get_latest_idx()})
     return f"/country/{iso3}?{query}"
 
-# ---------- Country page computations → figures + info ----------
+
+# ======== Country page computations → figures + info ========
 
 @callback(
     Output("pie-fig", "figure"),
@@ -205,31 +214,32 @@ def update_country_figures(month_idx, pathname):
 
     # Month guard: if missing/invalid, fall back to latest
     try:
-        month_idx_int = int(month_idx) if month_idx is not None else _latest_idx
+        month_idx_int = int(month_idx) if month_idx is not None else get_latest_idx()
     except Exception:
-        month_idx_int = _latest_idx
+        month_idx_int = get_latest_idx()
+
+    df = get_df()
 
     # If the month doesn’t exist in the data, fallback to latest
-    month_rows = _df().loc[_df()["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
+    month_rows = df.loc[df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
     if month_rows.empty:
-        month_idx_int = _latest_idx
-        month_rows = _df.loc[_df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
+        month_idx_int = get_latest_idx()
+        month_rows = df.loc[df["outcome_n"] == month_idx_int, ["_month"]].drop_duplicates()
 
     month_label = "Unknown" if month_rows.empty else month_rows["_month"].iloc[0].strftime("%Y-%m")
 
     # Month-global distributions
-    pie_counts = pie_counts_for_month(_df(), month_idx_int)
-    waffle_counts = waffle_counts_for_month(_df(), month_idx_int)
+    pie_counts = pie_counts_for_month(df, month_idx_int)
+    waffle_counts = waffle_counts_for_month(df, month_idx_int)
 
     # Row for highlight
-    target = find_country_row(_df(), month_idx_int, iso3)
+    target = find_country_row(df, month_idx_int, iso3)
     if target is None:
         pie_fig = make_pie(pie_counts, None, month_label)
         waffle_fig = make_waffle(waffle_counts, None, month_label)
-        info = html.Span([
-            html.B("Note: "), f"No record for {iso3} in {month_label}. ",
-            "Charts show month-level distribution across all countries."
-        ])
+        info = html.Span(
+            [html.B("Note: "), f"No record for {iso3} in {month_label}. ", "Charts show month-level distribution across all countries."]
+        )
         return pie_fig, waffle_fig, info
 
     country_name = str(target.get("name", iso3))
@@ -241,15 +251,22 @@ def update_country_figures(month_idx, pathname):
     pie_fig = make_pie(pie_counts, cat, month_label)
     waffle_fig = make_waffle(waffle_counts, band, month_label)
 
-    info = html.Span([
-        html.B("Country: "), f"{country_name} ({iso3})  •  ",
-        html.B("Month: "), f"{month_label}  •  ",
-        html.B("Pr(>threshold): "), f"{p_val:.3f} → {cat}  •  ",
-        html.B("Predicted fatalities: "), f"{pred_val:.1f} → {band}",
-    ])
+    info = html.Span(
+        [
+            html.B("Country: "),
+            f"{country_name} ({iso3})  •  ",
+            html.B("Month: "),
+            f"{month_label}  •  ",
+            html.B("Pr(>threshold): "),
+            f"{p_val:.3f} → {cat}  •  ",
+            html.B("Predicted fatalities: "),
+            f"{pred_val:.1f} → {band}",
+        ]
+    )
     return pie_fig, waffle_fig, info
 
-# ---------- Toggle details panel ----------
+
+# ========== Toggle details panel ==========
 
 @callback(
     Output("details-panel", "style"),
