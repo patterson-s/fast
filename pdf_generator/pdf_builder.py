@@ -166,6 +166,19 @@ class PDFBuilder:
             if plot_path and plot_path.exists():
                 story.append(Image(str(plot_path), width=6*inch, height=3.5*inch))
                 story.append(Spacer(1, 15))
+        
+        # Add seasonal comparison section
+        story.append(Paragraph("The figure below depicts how our forecasted months align with the same months historically.", self.styles['normal']))
+        story.append(Spacer(1, 15))
+        
+        story.append(Paragraph("<b>Figure 3</b>", self.styles['normal']))
+        story.append(Spacer(1, 5))
+        
+        if hasattr(data_loader, 'create_seasonal_comparison_plot'):
+            plot_path = data_loader.create_seasonal_comparison_plot(country_code, self.output_dir)
+            if plot_path and plot_path.exists():
+                story.append(Image(str(plot_path), width=6*inch, height=4*inch))
+                story.append(Spacer(1, 15))
     
     def _add_similar_countries_section(self, story: list, country_code: str, country_name: str, avg_prob: float, avg_fatalities: float, data_loader):
         story.append(Paragraph("Most-similar Countries", self.styles['section_header']))
