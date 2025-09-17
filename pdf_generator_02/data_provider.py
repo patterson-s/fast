@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 class DataProvider:
     def __init__(self):
@@ -94,3 +94,150 @@ class DataProvider:
             return "1,001-10,000"
         else:
             return "10,001+"
+    
+    def get_risk_intensity_category(self, country_code: str, month: int, year: int) -> Tuple[str, str]:
+        month_data = self.get_monthly_forecast_distribution(month, year)
+        target_country = month_data[month_data['isoab'] == country_code]
+        
+        if target_country.empty:
+            return "Unknown", "Unknown"
+        
+        target_row = target_country.iloc[0]
+        risk_category = self.categorize_probability(target_row['outcome_p'])
+        intensity_category = self.categorize_intensity(target_row['predicted'])
+        
+        return risk_category, intensity_category
+    
+    def get_cohort_countries(self, risk_category: str, intensity_category: str, month: int, year: int) -> List[str]:
+        month_data = self.get_monthly_forecast_distribution(month, year)
+        
+        if month_data.empty:
+            return []
+        
+        month_data['risk_category'] = month_data['outcome_p'].apply(self.categorize_probability)
+        month_data['intensity_category'] = month_data['predicted'].apply(self.categorize_intensity)
+        
+        cohort_data = month_data[
+            (month_data['risk_category'] == risk_category) & 
+            (month_data['intensity_category'] == intensity_category)
+        ]
+        
+        return cohort_data['isoab'].tolist()
+    
+    def get_global_monthly_averages(self, target_month: int, target_year: int) -> Dict[str, float]:
+        self.load_data()
+        
+        averages = {}
+        
+        # Historical averages
+        historical_points = {}
+        for year in range(target_year - 5, target_year + 1):
+            for month in [12, 3, 9]:  # Dec, Mar, Sep
+                if year == 2025 and month == 9:  # Sept 2025 - no data
+                    continue
+                if year == 2025 and month > 12:  # Future months in 2025
+                    continue
+                if year > 2025:  # All of 2026+ is future
+                    continue
+                
+                date_key = f"{year}-{month:02d}"
+                
+                # Calculate total fatalities for all countries in this month/year
+                month_year_data = self.historical_data[
+                    (self.historical_data['year'] == year) & 
+                    (self.historical_data['month'] == month)
+                ].copy()
+                
+                if not month_year_data.empty:
+                    month_year_data['total_fatalities'] = (
+                        month_year_data['ucdp_ged_ns_best_sum'] + 
+                        month_year_data['ucdp_ged_sb_best_sum'] + 
+                        month_year_data['ucdp_ged_os_best_sum']
+                    )
+                    # Average across all countries for this time period
+                    avg_fatalities = month_year_data.groupby('isoab')['total_fatalities'].sum().mean()
+                    historical_points[date_key] = avg_fatalities
+                else:
+                    historical_points[date_key] = 0.0
+        
+        # Forecast averages
+        month_mappings = {
+            12: (552, "2025-12"),  # Dec 2025
+            3: (555, "2026-03"),   # Mar 2026  
+            9: (561, "2026-09")    # Sep 2026
+        }
+        
+        forecast_points = {}
+        for month, (outcome_n, date_key) in month_mappings.items():
+            month_data = self.forecast_data[self.forecast_data['outcome_n'] == outcome_n]
+            if not month_data.empty:
+                avg_predicted = month_data['predicted'].mean()
+                forecast_points[date_key] = avg_predicted
+            else:
+                forecast_points[date_key] = 0.0
+        
+        averages.update(historical_points)
+        averages.update(forecast_points)
+        return averages
+    
+    def get_cohort_monthly_averages(self, cohort_countries: List[str], target_month: int, target_year: int) -> Dict[str, float]:
+        if not cohort_countries:
+            return {}
+        
+        self.load_data()
+        averages = {}
+        
+        # Historical averages for cohort
+        historical_points = {}
+        for year in range(target_year - 5, target_year + 1):
+            for month in [12, 3, 9]:  # Dec, Mar, Sep
+                if year == 2025 and month == 9:  # Sept 2025 - no data
+                    continue
+                if year == 2025 and month > 12:  # Future months in 2025
+                    continue
+                if year > 2025:  # All of 2026+ is future
+                    continue
+                
+                date_key = f"{year}-{month:02d}"
+                
+                # Get data for cohort countries only
+                cohort_data = self.historical_data[
+                    (self.historical_data['year'] == year) & 
+                    (self.historical_data['month'] == month) &
+                    (self.historical_data['isoab'].isin(cohort_countries))
+                ].copy()
+                
+                if not cohort_data.empty:
+                    cohort_data['total_fatalities'] = (
+                        cohort_data['ucdp_ged_ns_best_sum'] + 
+                        cohort_data['ucdp_ged_sb_best_sum'] + 
+                        cohort_data['ucdp_ged_os_best_sum']
+                    )
+                    # Average across cohort countries for this time period
+                    avg_fatalities = cohort_data.groupby('isoab')['total_fatalities'].sum().mean()
+                    historical_points[date_key] = avg_fatalities
+                else:
+                    historical_points[date_key] = 0.0
+        
+        # Forecast averages for cohort
+        month_mappings = {
+            12: (552, "2025-12"),  # Dec 2025
+            3: (555, "2026-03"),   # Mar 2026  
+            9: (561, "2026-09")    # Sep 2026
+        }
+        
+        forecast_points = {}
+        for month, (outcome_n, date_key) in month_mappings.items():
+            cohort_forecast_data = self.forecast_data[
+                (self.forecast_data['outcome_n'] == outcome_n) &
+                (self.forecast_data['isoab'].isin(cohort_countries))
+            ]
+            if not cohort_forecast_data.empty:
+                avg_predicted = cohort_forecast_data['predicted'].mean()
+                forecast_points[date_key] = avg_predicted
+            else:
+                forecast_points[date_key] = 0.0
+        
+        averages.update(historical_points)
+        averages.update(forecast_points)
+        return averages

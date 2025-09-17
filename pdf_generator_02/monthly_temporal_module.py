@@ -14,7 +14,7 @@ class MonthlyTemporalModule(OutputModule):
         
     def get_context(self) -> str:
         month_name = self.month_names[self.target_month]
-        return f"""This figure shows the historical trend for {month_name} fatalities over the past 5 years, with our forecast for {month_name} {self.target_year} highlighted. The other forecast months are shown for additional context."""
+        return f"""This figure shows the historical trend for {month_name} fatalities over the past 5 years, with our forecast for {month_name} {self.target_year} highlighted. The other forecast months are shown for additional context. Global and cohort averages provide comparative context."""
     
     def _get_historical_monthly_data(self, historical_data: pd.DataFrame, country_code: str) -> Dict[str, float]:
         country_historical = historical_data[historical_data['isoab'] == country_code].copy()
@@ -33,8 +33,6 @@ class MonthlyTemporalModule(OutputModule):
         
         for year in range(self.target_year - 5, self.target_year + 1):
             for month in target_months:
-                # Only include data that is actually historical (past)
-                # Skip Sept 2025 (no data) and any future dates
                 if year == 2025 and month == 9:  # Sept 2025 - no data
                     continue
                 if year == 2025 and month > 12:  # Future months in 2025
@@ -60,7 +58,6 @@ class MonthlyTemporalModule(OutputModule):
         country_forecast = forecast_data[forecast_data['isoab'] == country_code]
         
         forecast_points = {}
-        # Map months to outcome_n and date strings
         month_mappings = {
             12: (552, "2025-12"),  # Dec 2025
             3: (555, "2026-03"),   # Mar 2026  
@@ -79,11 +76,31 @@ class MonthlyTemporalModule(OutputModule):
     def generate_content(self, country_code: str, forecast_data: pd.DataFrame, 
                         historical_data: pd.DataFrame, output_dir: Path) -> Optional[Path]:
         
+        from data_provider import DataProvider
+        data_provider = DataProvider()
+        
+        # Get country-specific data
         historical_points = self._get_historical_monthly_data(historical_data, country_code)
         forecast_points = self._get_forecast_data(forecast_data, country_code)
         
         if not historical_points:
             return None
+        
+        # Get risk/intensity category for target month
+        risk_category, intensity_category = data_provider.get_risk_intensity_category(
+            country_code, self.target_month, self.target_year
+        )
+        
+        # Get cohort countries and averages
+        cohort_countries = data_provider.get_cohort_countries(
+            risk_category, intensity_category, self.target_month, self.target_year
+        )
+        
+        # Get global and cohort averages
+        global_averages = data_provider.get_global_monthly_averages(self.target_month, self.target_year)
+        cohort_averages = data_provider.get_cohort_monthly_averages(
+            cohort_countries, self.target_month, self.target_year
+        )
         
         country_name = historical_data[historical_data['isoab'] == country_code]['name'].iloc[0] if len(historical_data[historical_data['isoab'] == country_code]) > 0 else country_code
         
@@ -106,6 +123,10 @@ class MonthlyTemporalModule(OutputModule):
         date_labels = []
         is_forecast = []
         
+        # Also prepare global and cohort data
+        global_y_values = []
+        cohort_y_values = []
+        
         for date_str in sorted_dates:
             date_obj = datetime.strptime(date_str, "%Y-%m")
             months_since_start = (date_obj.year - start_date.year) * 12 + (date_obj.month - start_date.month)
@@ -114,11 +135,15 @@ class MonthlyTemporalModule(OutputModule):
             y_values.append(all_points[date_str])
             date_labels.append(date_str)
             is_forecast.append(date_str in forecast_points)
+            
+            # Add global and cohort values
+            global_y_values.append(global_averages.get(date_str, 0))
+            cohort_y_values.append(cohort_averages.get(date_str, 0))
         
         # Calculate max value for label positioning
         max_value = max(y_values) if y_values else 100
         
-        # Split into historical and forecast segments
+        # Split into historical and forecast segments for country data
         hist_x = []
         hist_y = []
         forecast_x = []
@@ -126,20 +151,57 @@ class MonthlyTemporalModule(OutputModule):
         target_forecast_x = None
         target_forecast_y = None
         
+        # Also split for global and cohort
+        hist_global_x = []
+        hist_global_y = []
+        forecast_global_x = []
+        forecast_global_y = []
+        
+        hist_cohort_x = []
+        hist_cohort_y = []
+        forecast_cohort_x = []
+        forecast_cohort_y = []
+        
         target_date_key = f"{self.target_year}-{self.target_month:02d}"
         
-        for i, (x, y, date_str, is_fc) in enumerate(zip(x_positions, y_values, date_labels, is_forecast)):
+        for i, (x, y, date_str, is_fc, global_y, cohort_y) in enumerate(zip(
+            x_positions, y_values, date_labels, is_forecast, global_y_values, cohort_y_values
+        )):
             if is_fc:
                 forecast_x.append(x)
                 forecast_y.append(y)
+                forecast_global_x.append(x)
+                forecast_global_y.append(global_y)
+                forecast_cohort_x.append(x)
+                forecast_cohort_y.append(cohort_y)
                 if date_str == target_date_key:
                     target_forecast_x = x
                     target_forecast_y = y
             else:
                 hist_x.append(x)
                 hist_y.append(y)
+                hist_global_x.append(x)
+                hist_global_y.append(global_y)
+                hist_cohort_x.append(x)
+                hist_cohort_y.append(cohort_y)
         
-        # Plot historical line
+        # Plot global averages (historical + forecast)
+        if hist_global_x:
+            ax.plot(hist_global_x, hist_global_y, linewidth=2, color='gray', 
+                   alpha=0.5, linestyle='--', label='Global Average')
+        if forecast_global_x:
+            ax.plot(forecast_global_x, forecast_global_y, linewidth=2, color='gray', 
+                   alpha=0.5, linestyle='--')
+        
+        # Plot cohort averages (historical + forecast)
+        if hist_cohort_x and cohort_countries:
+            ax.plot(hist_cohort_x, hist_cohort_y, linewidth=2, color='purple', 
+                   alpha=0.5, linestyle=':', label=f'Cohort Average ({risk_category}, {intensity_category})')
+        if forecast_cohort_x and cohort_countries:
+            ax.plot(forecast_cohort_x, forecast_cohort_y, linewidth=2, color='purple', 
+                   alpha=0.5, linestyle=':')
+        
+        # Plot historical country line (main line, full opacity)
         if hist_x:
             ax.plot(hist_x, hist_y, marker='o', linewidth=3, markersize=8, 
                    color='darkred', alpha=0.9, label='Historical')
