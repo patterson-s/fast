@@ -181,9 +181,11 @@ class PDFBuilder:
                 story.append(Spacer(1, 15))
     
     def _add_similar_countries_section(self, story: list, country_code: str, country_name: str, avg_prob: float, avg_fatalities: float, data_loader):
+        target_risk_category = data_loader.categorize_probability(avg_prob)
+        
         story.append(Paragraph("Most-similar Countries", self.styles['section_header']))
         
-        story.append(Paragraph(f"Table 2 below depicts the position of {country_name} in relation to the countries with the most similar conflict profile.", self.styles['normal']))
+        story.append(Paragraph(f"Table 2 below depicts the position of {country_name} in relation to other countries in the '{target_risk_category}' risk category.", self.styles['normal']))
         story.append(Spacer(1, 15))
         
         story.append(Paragraph("<b>Table 2</b>", self.styles['normal']))

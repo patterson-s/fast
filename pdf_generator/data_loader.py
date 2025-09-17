@@ -170,50 +170,37 @@ class DataLoader:
             return []
         
         target_country = all_countries[target_country_code]
-        other_countries = {k: v for k, v in all_countries.items() if k != target_country_code}
+        target_risk_category = self.categorize_probability(target_avg_prob)
         
-        distances = []
-        for country_code, country_data in other_countries.items():
-            prob_diff = (country_data['avg_probability'] - target_avg_prob) ** 2
-            fatalities_diff = ((country_data['avg_fatalities'] - target_avg_fatalities) / max(target_avg_fatalities, 1)) ** 2
-            distance = (prob_diff + fatalities_diff) ** 0.5
-            
-            distances.append({
-                'code': country_code,
-                'name': country_data['name'],
-                'avg_probability': country_data['avg_probability'],
-                'avg_fatalities': country_data['avg_fatalities'],
-                'distance': distance
-            })
+        # Find all countries in the same risk category
+        same_risk_countries = []
+        for country_code, country_data in all_countries.items():
+            country_risk_category = self.categorize_probability(country_data['avg_probability'])
+            if country_risk_category == target_risk_category:
+                same_risk_countries.append({
+                    'code': country_code,
+                    'name': country_data['name'],
+                    'avg_probability': country_data['avg_probability'],
+                    'avg_fatalities': country_data['avg_fatalities']
+                })
         
-        distances.sort(key=lambda x: x['distance'])
-        closest_4 = distances[:4]
+        # Sort by average fatalities (ascending)
+        same_risk_countries.sort(key=lambda x: x['avg_fatalities'])
         
-        countries_below = [c for c in closest_4 if c['avg_fatalities'] < target_avg_fatalities]
-        countries_above = [c for c in closest_4 if c['avg_fatalities'] > target_avg_fatalities]
+        # For lowest risk category, cap at 10 countries
+        if target_risk_category == "Near-certain no conflict" and len(same_risk_countries) > 10:
+            # Keep target country and 9 others, ensuring target is included
+            target_in_list = any(c['code'] == target_country_code for c in same_risk_countries)
+            if target_in_list:
+                # Remove target temporarily, take 9 others, then add target back
+                others = [c for c in same_risk_countries if c['code'] != target_country_code][:9]
+                target = [c for c in same_risk_countries if c['code'] == target_country_code][0]
+                same_risk_countries = others + [target]
+                same_risk_countries.sort(key=lambda x: x['avg_fatalities'])
+            else:
+                same_risk_countries = same_risk_countries[:10]
         
-        result = []
-        
-        if len(countries_below) >= 2:
-            result.extend(sorted(countries_below, key=lambda x: x['avg_fatalities'], reverse=True)[:2])
-        else:
-            result.extend(countries_below)
-        
-        result.append(target_country)
-        
-        if len(countries_above) >= 2:
-            result.extend(sorted(countries_above, key=lambda x: x['avg_fatalities'])[:2])
-        else:
-            result.extend(countries_above)
-        
-        if len(result) < 5:
-            remaining_closest = [c for c in distances[:8] if c['code'] not in [r['code'] for r in result]]
-            needed = 5 - len(result)
-            result.extend(remaining_closest[:needed])
-        
-        result.sort(key=lambda x: x['avg_fatalities'])
-        
-        return result
+        return same_risk_countries
     
     def create_rolling_periods_plot(self, country_code: str, output_dir: Path) -> Optional[Path]:
         self.load_data()
