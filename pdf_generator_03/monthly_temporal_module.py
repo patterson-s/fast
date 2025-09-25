@@ -85,7 +85,7 @@ class MonthlyTemporalModule(OutputModule):
         
         country_name = data_provider.get_country_name(country_code)
         
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig, ax = plt.subplots(figsize=(9, 5))
         
         all_points = {}
         all_points.update(historical_points)
@@ -128,7 +128,7 @@ class MonthlyTemporalModule(OutputModule):
             hist_x = [item[0] for item in hist_data_points]
             hist_y = [item[1] for item in hist_data_points]
             
-            ax.plot(hist_x, hist_y, marker='o', linewidth=2, markersize=4, 
+            ax.plot(hist_x, hist_y, marker='o', linewidth=1.5, markersize=3, 
                    color='darkgray', alpha=0.8, label='Historical (all months)')
             
             if len(hist_y) >= 6:
@@ -141,7 +141,7 @@ class MonthlyTemporalModule(OutputModule):
                         rolling_x.append(hist_x[i])
     
                 if rolling_mean:
-                    ax.plot(rolling_x, rolling_mean, linewidth=2, color='darkblue', 
+                    ax.plot(rolling_x, rolling_mean, linewidth=1.5, color='darkblue', 
                         alpha=0.8, label='6-Month Rolling Average')
         
         target_forecast_x = None
@@ -157,19 +157,19 @@ class MonthlyTemporalModule(OutputModule):
             sorted_forecast_x = [item[0] for item in forecast_data_points]
             sorted_forecast_y = [item[1] for item in forecast_data_points]
             
-            ax.plot(sorted_forecast_x, sorted_forecast_y, linewidth=2, color='steelblue', 
+            ax.plot(sorted_forecast_x, sorted_forecast_y, linewidth=1.5, color='steelblue', 
                    alpha=0.7, linestyle='-')
             
             for x, y, date_str in forecast_data_points:
                 if date_str == target_date_key:
-                    ax.plot(x, y, marker='o', markersize=12, color='steelblue', alpha=1.0, 
+                    ax.plot(x, y, marker='o', markersize=8, color='steelblue', alpha=1.0, 
                            label=f'Target Forecast ({self.month_names[self.target_month]})')
                     ax.text(x, y + max_value * 0.02, f"{int(y)}", 
                            ha='center', va='bottom', fontsize=10, color='steelblue', weight='bold')
                     target_forecast_x = x
                     target_forecast_y = y
                 else:
-                    ax.plot(x, y, marker='o', markersize=6, color='steelblue', alpha=0.6)
+                    ax.plot(x, y, marker='o', markersize=4, color='steelblue', alpha=0.6)
         
         tick_positions = []
         tick_labels = []
@@ -193,13 +193,13 @@ class MonthlyTemporalModule(OutputModule):
             tick_labels.append(label)
         
         ax.set_xticks(tick_positions)
-        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
+        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=10)
         
         month_name = self.month_names[self.target_month]
-        ax.set_ylabel('Fatalities', fontsize=12)
-        ax.set_title(f'{country_name} - Complete Monthly Fatalities', fontsize=14, pad=15)
+        ax.set_ylabel('Fatalities', fontsize=10)
+        ax.set_title(f'{country_name} - Complete Monthly Fatalities', fontsize=13, pad=10)
         ax.grid(True, alpha=0.3)
-        ax.legend(loc='upper left')
+        ax.legend(loc='upper left', fontsize=11)
         
         ax.set_xlim(min(x_positions) - 2, max(x_positions) + 2)
         

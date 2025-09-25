@@ -83,11 +83,11 @@ class CovariateDistributionModule(OutputModule):
                 percentile = self._get_percentile(country_value, col_data)
                 ax.text(normalized_country_value, country_density + 0.02, 
                        f'{percentile:.0f}%', ha='center', va='bottom', 
-                       fontsize=9, color=color, weight='bold')
+                       fontsize=11, color=color, weight='bold')
         
-        ax.set_xlabel('Standardized Values (Z-scores)', fontsize=12)
-        ax.set_ylabel('Probability Density', fontsize=12)
-        ax.set_title(f'{country_name} - Covariate Distributions', fontsize=14, pad=15)
+        ax.set_xlabel('Standardized Values (Z-scores)', fontsize=14)
+        ax.set_ylabel('Probability Density', fontsize=14)
+        ax.set_title(f'{country_name} - Covariate Distributions', fontsize=16, pad=15)
         ax.grid(True, alpha=0.3)
         ax.legend(loc='upper right')
         

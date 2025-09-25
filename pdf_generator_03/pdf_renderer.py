@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime
 from reportlab.lib.pagesizes import LETTER, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.units import inch
 from reportlab.lib import colors
@@ -21,37 +21,41 @@ class PDFRenderer:
             'title': ParagraphStyle(
                 'Title',
                 parent=base_styles['Heading1'],
-                fontSize=14,
+                fontSize=12,
                 textColor='black',
-                alignment=TA_LEFT,
-                spaceAfter=10
-            ),
-            'bluf': ParagraphStyle(
-                'BLUF',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                alignment=TA_LEFT,
-                spaceAfter=10,
-                leftIndent=10,
-                rightIndent=10,
-                borderWidth=1,
-                borderColor=colors.gray,
-                borderPadding=10
+                alignment=TA_CENTER,
+                spaceAfter=8,
+                spaceBefore=0
             ),
             'section_header': ParagraphStyle(
                 'SectionHeader',
                 parent=base_styles['Heading2'],
-                fontSize=12,
+                fontSize=10,
                 textColor='black',
                 alignment=TA_LEFT,
-                spaceAfter=10
+                spaceAfter=5,
+                fontName='Helvetica-Bold'
             ),
-            'normal': ParagraphStyle(
-                'Normal',
+            'context': ParagraphStyle(
+                'Context',
                 parent=base_styles['Normal'],
-                fontSize=10,
+                fontSize=7,
                 alignment=TA_LEFT,
-                spaceAfter=10
+                spaceAfter=3
+            ),
+            'bluf': ParagraphStyle(
+                'BLUF',
+                parent=base_styles['Normal'],
+                fontSize=7,
+                alignment=TA_LEFT,
+                spaceAfter=3
+            ),
+            'interpretation': ParagraphStyle(
+                'Interpretation',
+                parent=base_styles['Normal'],
+                fontSize=7,
+                alignment=TA_LEFT,
+                spaceAfter=3
             )
         }
         return styles
@@ -68,27 +72,22 @@ class PDFRenderer:
         doc = SimpleDocTemplate(
             str(output_file), 
             pagesize=landscape(LETTER),
-            topMargin=0.3*inch,
-            bottomMargin=0.5*inch,
-            leftMargin=0.5*inch,
-            rightMargin=0.5*inch
+            topMargin=0.15*inch,
+            bottomMargin=0.15*inch,
+            leftMargin=0.3*inch,
+            rightMargin=0.3*inch
         )
         
         story = []
         
-        title_style = ParagraphStyle(
-            'CenteredTitle',
-            parent=self.styles['title'],
-            alignment=TA_CENTER
-        )
-        story.append(Paragraph(f"{country_name}, {month_name} {target_year}", title_style))
-        story.append(Spacer(1, 5))
+        story.append(Paragraph(f"{country_name}, {month_name} {target_year}", self.styles['title']))
         
-        bluf_content = []
+        summary_content = []
         section1_content = []
+        section2_content = []
+        section3_content = []
         
         try:
-            print("Attempting to generate BLUF...")
             from bluf_generator import BLUFGenerator
             bluf_generator = BLUFGenerator()
             
@@ -97,63 +96,74 @@ class PDFRenderer:
                 forecast_data, historical_data, None
             )
             
-            print(f"BLUF generated: {bluf_text[:100]}...")
-            
-            bluf_content.append(Paragraph(bluf_text, self.styles['bluf']))
-            
-            print("BLUF added successfully")
+            summary_content.append(Paragraph("Summary", self.styles['section_header']))
+            summary_content.append(Paragraph(bluf_text, self.styles['bluf']))
             
         except Exception as e:
             print(f"Error generating BLUF: {e}")
-            import traceback
-            traceback.print_exc()
-            bluf_content.append(Paragraph("BLUF generation failed", self.styles['normal']))
+            summary_content.append(Paragraph("Summary", self.styles['section_header']))
+            summary_content.append(Paragraph("BLUF generation failed", self.styles['bluf']))
         
         if len(modules) > 0:
             module = modules[0]
-            section1_content.append(Paragraph(f"Section 1", self.styles['section_header']))
-            section1_content.append(Paragraph(module.get_context(), self.styles['normal']))
-            section1_content.append(Spacer(1, 5))
+            section1_content.append(Paragraph("Violence trend", self.styles['section_header']))
+            section1_content.append(Paragraph(module.get_context(), self.styles['context']))
             
             content_path = module.generate_content(country_code, forecast_data, historical_data, self.output_dir)
             if content_path and content_path.exists():
-                section1_content.append(Image(str(content_path), width=5*inch, height=2.8*inch))
-                section1_content.append(Spacer(1, 5))
+                section1_content.append(Image(str(content_path), width=4*inch, height=2*inch))
             
             interpretation = module.get_interpretation(country_code, forecast_data, historical_data)
             if interpretation:
-                section1_content.append(Paragraph(interpretation, self.styles['normal']))
+                section1_content.append(Paragraph(interpretation, self.styles['interpretation']))
         
-        page1_table = Table(
-            [[bluf_content, section1_content]],
-            colWidths=[5*inch, 5*inch]
+        if len(modules) > 1:
+            module = modules[1]
+            section2_content.append(Paragraph("Structural risk factors", self.styles['section_header']))
+            section2_content.append(Paragraph(module.get_context(), self.styles['context']))
+            
+            content_path = module.generate_content(country_code, forecast_data, historical_data, self.output_dir)
+            if content_path and content_path.exists():
+                section2_content.append(Image(str(content_path), width=4*inch, height=2*inch))
+            
+            interpretation = module.get_interpretation(country_code, forecast_data, historical_data)
+            if interpretation:
+                section2_content.append(Paragraph(interpretation, self.styles['interpretation']))
+        
+        if len(modules) > 2:
+            module = modules[2]
+            section3_content.append(Paragraph("Comparable cases", self.styles['section_header']))
+            section3_content.append(Paragraph(module.get_context(), self.styles['context']))
+            
+            content_path = module.generate_content(country_code, forecast_data, historical_data, self.output_dir)
+            if content_path and content_path.exists():
+                section3_content.append(Image(str(content_path), width=4*inch, height=2*inch))
+            
+            interpretation = module.get_interpretation(country_code, forecast_data, historical_data)
+            if interpretation:
+                section3_content.append(Paragraph(interpretation, self.styles['interpretation']))
+        
+        quadrant_table = Table(
+            [
+                [summary_content, section1_content],
+                [section2_content, section3_content]
+            ],
+            colWidths=[5*inch, 5*inch],
+            rowHeights=[3.75*inch, 3.75*inch]
         )
         
-        page1_table.setStyle(TableStyle([
+        quadrant_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LINEABOVE', (0, 0), (-1, 0), 0.5, colors.grey),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.grey),
+            ('LINEBEFORE', (1, 0), (1, -1), 0.5, colors.grey),
         ]))
         
-        story.append(page1_table)
-        story.append(PageBreak())
-        
-        for i, module in enumerate(modules[1:], 2):
-            story.append(Paragraph(f"Section {i}", self.styles['section_header']))
-            story.append(Paragraph(module.get_context(), self.styles['normal']))
-            story.append(Spacer(1, 10))
-            
-            content_path = module.generate_content(country_code, forecast_data, historical_data, self.output_dir)
-            if content_path and content_path.exists():
-                story.append(Image(str(content_path), width=8*inch, height=4.5*inch))
-                story.append(Spacer(1, 10))
-            
-            interpretation = module.get_interpretation(country_code, forecast_data, historical_data)
-            if interpretation:
-                story.append(Paragraph(interpretation, self.styles['normal']))
-                story.append(Spacer(1, 15))
+        story.append(quadrant_table)
         
         doc.build(story)
         return output_file
