@@ -246,14 +246,10 @@ class MonthlyTemporalModule(OutputModule):
         
         month_name = self.month_names[self.target_month]
         
-        if target_forecast > recent_avg * 1.5:
-            trend_desc = "significantly higher than"
-        elif target_forecast > recent_avg * 1.1:
-            trend_desc = "moderately higher than"
-        elif target_forecast < recent_avg * 0.5:
-            trend_desc = "significantly lower than"
+        if target_forecast > recent_avg * 1.1:
+            trend_desc = "higher than"
         elif target_forecast < recent_avg * 0.9:
-            trend_desc = "moderately lower than"
+            trend_desc = "lower than"
         else:
             trend_desc = "consistent with"
         

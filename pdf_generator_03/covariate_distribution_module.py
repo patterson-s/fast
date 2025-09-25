@@ -20,7 +20,7 @@ class CovariateDistributionModule(OutputModule):
         self.colors = ['red', 'blue']
     
     def get_context(self) -> str:
-        return """This figure shows where the target country sits within the global distribution for key covariates. Each colored curve represents the probability density of a covariate across all countries, with the target country's position marked by a vertical line."""
+        return """This figure shows where the target country sits within the regional distribution for key covariates. Each colored curve represents the probability density of a covariate across all countries, with the target country's position marked by a vertical line."""
     
     def _normalize_data(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
         normalized = {}

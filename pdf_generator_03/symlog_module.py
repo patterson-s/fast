@@ -19,7 +19,7 @@ class SymlogModule(OutputModule):
         
     def get_context(self) -> str:
         month_name = self.month_names[self.target_month]
-        return f"""This figure shows the global distribution of conflict forecasts for {month_name} {self.target_year}, with countries positioned by their probability of experiencing ≥25 fatalities (x-axis) and predicted fatalities (y-axis, symlog scale). The target country is highlighted with a prominent marker."""
+        return f"""This figure shows the regional distribution of conflict forecasts for {month_name} {self.target_year}, with countries positioned by their probability of experiencing ≥25 fatalities (x-axis) and predicted fatalities (y-axis, symlog scale). The target country is highlighted with a prominent marker."""
     
     def generate_content(self, country_code: str, forecast_data: pd.DataFrame, 
                         historical_data: pd.DataFrame, output_dir: Path) -> Optional[Path]:

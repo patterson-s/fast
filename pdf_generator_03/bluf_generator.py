@@ -136,16 +136,12 @@ class BLUFGenerator:
             trend_desc = "relatively stable"
         
         ratio = data['predicted_fatalities'] / data['historical_avg'] if data['historical_avg'] > 0 else float('inf')
-        if ratio > 1.5:
-            forecast_vs_historical = "significantly higher than"
-        elif ratio > 1.1:
-            forecast_vs_historical = "moderately higher than"
-        elif ratio < 0.5:
-            forecast_vs_historical = "significantly lower than"
+        if ratio > 1.1:
+            forecast_vs_historical = "higher than"
         elif ratio < 0.9:
-            forecast_vs_historical = "moderately lower than"
+            forecast_vs_historical = "lower than"
         else:
-            forecast_vs_historical = "in line with"
+            forecast_vs_historical = "consistent with"
         
         covariate_desc = []
         covariate_labels = {
