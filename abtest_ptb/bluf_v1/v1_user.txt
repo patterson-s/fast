@@ -1,0 +1,23 @@
+Generate a Bottom Line Up Front (BLUF) summary for a conflict forecast. Use the following data and follow the structure from these examples:
+
+EXAMPLES:
+"In December 2025, Colombia has a 54.0% probability of experiencing at least 25 battle deaths, with a forecast of 27 battle deaths on average. This puts Colombia in the category of Probable conflict, though it is at the low end of this category. Comparable countries for this month include India and Mali. The primary reason for this forecast is Colombia's recent history of violence. The forecast is in line with conditions of violence over the last year, though is somewhat lower. Colombia's position on two key risk factors, infant mortality and military role in government, is lower than the regional average, which contributes to a lower forecast of violence."
+
+DATA FOR {country_upper}:
+- Country: {country}
+- Month/Year: {month_title} {year}
+- Probability of ≥25 fatalities: {probability_percent} ({prob_percentile}th percentile)
+- Predicted fatalities: {predicted_fatalities} ({pred_percentile}th percentile)
+- Risk category: {risk_category}
+- {cohort_prefix}: {cohort_str}
+- Historical average (all months): {historical_avg} fatalities
+- Historical trend: {trend_desc}
+- Forecast vs historical: {forecast_vs_historical} the historical average
+- Covariate analysis: {covariate_desc}
+
+Generate a 3-paragraph summary following the exact structure:
+1. Core forecast (probability, predicted fatalities, category, comparable countries)
+2. Historical context (recent violence history, how forecast compares to trend)
+3. Risk factors (covariate analysis and their relative importance vs time trend)
+
+Keep the tone analytical and professional. Use specific numbers from the data provided.

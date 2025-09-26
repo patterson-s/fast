@@ -1,0 +1,17 @@
+Generate a BLUF summary for the following conflict forecast:
+
+Country: {country}
+Month/Year: {month_title} {year}
+Probability of ≥25 fatalities: {probability_percent} ({prob_percentile}th percentile)
+Predicted fatalities: {predicted_fatalities} ({pred_percentile}th percentile)
+Risk category: {risk_category}
+{cohort_prefix}: {cohort_str}
+
+Historical context:
+- Historical average (all months): {historical_avg} fatalities
+- Historical trend: {trend_desc}
+- Forecast vs historical: {forecast_vs_historical} the historical average
+
+Risk factors:
+- Infant mortality: {covariate_desc}
+- Military executive power: {covariate_desc}
