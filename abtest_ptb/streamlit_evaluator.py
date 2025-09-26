@@ -16,11 +16,10 @@ def save_evaluations(results_data, evaluations):
         "evaluations": evaluations
     }
     
-    output_path = Path(r"C:\Users\spatt\Desktop\FAST\abtest_ptb\output") / f"evaluations_{timestamp}.json"
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
+    filename = f"evaluations_{timestamp}.json"
+    json_str = json.dumps(output, indent=2, ensure_ascii=False)
     
-    return output_path
+    return filename, json_str
 
 def display_context(forecast_data, country_name, month, year):
     st.subheader("Context")
