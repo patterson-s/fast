@@ -166,11 +166,17 @@ def main():
             if st.button("Export Results"):
                 completed = [e for e in st.session_state.evaluations if e is not None]
                 if completed:
-                    output_path = save_evaluations(
+                    filename, json_str = save_evaluations(
                         st.session_state.results_data,
                         completed
                     )
-                    st.success(f"Exported {len(completed)} evaluations to {output_path.name}")
+                    st.download_button(
+                        label="Download Evaluations",
+                        data=json_str,
+                        file_name=filename,
+                        mime="application/json"
+                    )
+                    st.success(f"Ready to download {len(completed)} evaluations")
                 else:
                     st.warning("No evaluations to export")
         
