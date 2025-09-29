@@ -90,7 +90,7 @@ class GridPDFRenderer:
         summary_content.append(Paragraph("(BLUF content to be added)", self.styles['context']))
         
         temporal_module = modules[0]
-        temporal_content.append(Paragraph("Historical trend and forecast", self.styles['section_header']))
+        temporal_content.append(Paragraph("Violence trend", self.styles['section_header']))
         temporal_content.append(Paragraph(temporal_module.get_context(), self.styles['context']))
         
         content_path = temporal_module.generate_content(priogrid_gid, target_month_id,
@@ -104,7 +104,7 @@ class GridPDFRenderer:
             temporal_content.append(Paragraph(interpretation, self.styles['interpretation']))
         
         spatial_module = modules[2]
-        spatial_content.append(Paragraph("Spatial context", self.styles['section_header']))
+        spatial_content.append(Paragraph("Geographic context", self.styles['section_header']))
         spatial_content.append(Paragraph(spatial_module.get_context(), self.styles['context']))
         
         content_path = spatial_module.generate_content(priogrid_gid, target_month_id,
@@ -118,7 +118,7 @@ class GridPDFRenderer:
             spatial_content.append(Paragraph(interpretation, self.styles['interpretation']))
         
         comparison_module = modules[1]
-        comparison_content.append(Paragraph("Model comparison", self.styles['section_header']))
+        comparison_content.append(Paragraph("Climate and food security model", self.styles['section_header']))
         comparison_content.append(Paragraph(comparison_module.get_context(), self.styles['context']))
         
         content_path = comparison_module.generate_content(priogrid_gid, target_month_id,
