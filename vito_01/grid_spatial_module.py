@@ -119,16 +119,16 @@ class GridSpatialModule(GridOutputModule):
                 'country': neighbor_country
             }
         
-        fig, ax = plt.subplots(figsize=(5, 4))
-        ax.set_xlim(-0.2, 3.2)
-        ax.set_ylim(-0.2, 3.2)
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.set_xlim(-0.5, 4.5)
+        ax.set_ylim(-0.5, 3.5)
         ax.set_aspect('equal')
         ax.axis('off')
         
         positions = {
-            'NW': (0, 2), 'N': (1, 2), 'NE': (2, 2),
-            'W': (0, 1), 'CENTER': (1, 1), 'E': (2, 1),
-            'SW': (0, 0), 'S': (1, 0), 'SE': (2, 0)
+            'NW': (0.5, 2), 'N': (1.5, 2), 'NE': (2.5, 2),
+            'W': (0.5, 1), 'CENTER': (1.5, 1), 'E': (2.5, 1),
+            'SW': (0.5, 0), 'S': (1.5, 0), 'SE': (2.5, 0)
         }
         
         for pos_name, (x, y) in positions.items():
@@ -203,7 +203,7 @@ class GridSpatialModule(GridOutputModule):
             mpatches.Patch(facecolor='#FF6B6B', edgecolor='black', label='1k+'),
             plt.Line2D([0], [0], color='red', linewidth=2, linestyle='--', label='Border')
         ]
-        ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1.0, 0.5), 
+        ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1.15, 0.5), 
                  fontsize=8, frameon=False)
         
         plt.tight_layout()

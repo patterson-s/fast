@@ -146,6 +146,7 @@ class GridTemporalModule(GridOutputModule):
             ax_prob.set_yticks([0, 0.5, 1.0])
             ax_prob.set_yticklabels(['0', '0.5', '1'], fontsize=8)
             ax_prob.set_xticks([])
+            ax_prob.yaxis.set_label_position("right")
             ax_prob.set_ylabel('P(≥1 death)', fontsize=8)
         else:
             ax_prob.text(0.5, 0.5, 'N/A', ha='center', va='center', fontsize=9)
