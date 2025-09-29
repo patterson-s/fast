@@ -285,41 +285,35 @@ class GridSpatialModule(GridOutputModule):
                 total_country_grids = len(country_grids)
                 
                 if country_rank:
-                    country_rank_desc = f" Within {focal_country}, this grid ranks #{country_rank} out of {total_country_grids} grids."
+                    grids_more = country_rank - 1
+                    grids_less = total_country_grids - country_rank
+                    
+                    country_rank_desc = f" Within {focal_country}, this grid is {country_rank} out of {total_country_grids}, meaning {grids_more} grids are forecasted to experience more conflict and {grids_less} are expected to experience less conflict."
         
         global_rank_desc = ""
         if focal_value is not None:
             all_forecast = baseline_forecast[baseline_forecast['month_id'] == target_month_id].copy()
-            all_forecast = all_forecast.sort_values('outcome_n', ascending=False)
             
             if focal_value == 0:
-                bucket = "0"
-            elif focal_value <= 10:
-                bucket = "1-10"
-            elif focal_value <= 100:
-                bucket = "11-100"
-            elif focal_value <= 1000:
-                bucket = "101-1000"
-            else:
-                bucket = "1001+"
-            
-            bucket_grids = []
-            if focal_value == 0:
+                category_name = "lowest"
+                category_range = "0 fatalities"
                 bucket_grids = all_forecast[all_forecast['outcome_n'] == 0]
             elif focal_value <= 10:
+                category_name = "second lowest"
+                category_range = "1-10 fatalities"
                 bucket_grids = all_forecast[(all_forecast['outcome_n'] > 0) & (all_forecast['outcome_n'] <= 10)]
             elif focal_value <= 100:
+                category_name = "second highest"
+                category_range = "11-100 fatalities"
                 bucket_grids = all_forecast[(all_forecast['outcome_n'] > 10) & (all_forecast['outcome_n'] <= 100)]
-            elif focal_value <= 1000:
-                bucket_grids = all_forecast[(all_forecast['outcome_n'] > 100) & (all_forecast['outcome_n'] <= 1000)]
             else:
-                bucket_grids = all_forecast[all_forecast['outcome_n'] > 1000]
+                category_name = "highest"
+                category_range = "101-1000 fatalities"
+                bucket_grids = all_forecast[(all_forecast['outcome_n'] > 100) & (all_forecast['outcome_n'] <= 1000)]
             
-            bucket_rank = next((i + 1 for i, (_, row) in enumerate(bucket_grids.iterrows()) 
-                               if int(row['priogrid_gid']) == priogrid_gid), None)
             bucket_total = len(bucket_grids)
             
-            if bucket_rank:
-                global_rank_desc = f" Globally, this grid falls in the {bucket} fatalities category, ranking #{bucket_rank} out of {bucket_total} grids in this category."
+            if bucket_total > 0:
+                global_rank_desc = f" Globally, this grid is among {bucket_total} grids in the {category_name} category, which spans from {category_range} per month."
         
         return f"""For {month_str}: {neighborhood_desc}. {border_desc}.{country_rank_desc}{global_rank_desc}"""

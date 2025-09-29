@@ -10,7 +10,7 @@ class GridTemporalModule(GridOutputModule):
         self.target_month_id = target_month_id
     
     def get_context(self) -> str:
-        return """This figure shows the complete monthly fatalities trend for this grid cell over the past 5 years, with baseline model forecast. The target forecast month is highlighted."""
+        return """This figure shows the complete monthly fatalities trend for this grid cell over the past 5 years, with baseline model forecast. The target forecast month is highlighted. The probability bar shows the predicted probability of at least one battle death."""
     
     def _get_historical_data(self, historical_data: pd.DataFrame, priogrid_gid: int) -> Dict[int, float]:
         grid_historical = historical_data[historical_data['priogrid_gid'] == priogrid_gid].copy()
@@ -33,6 +33,17 @@ class GridTemporalModule(GridOutputModule):
         
         return forecast_points
     
+    def _get_outcome_p(self, forecast_data: pd.DataFrame, priogrid_gid: int, target_month_id: int) -> Optional[float]:
+        grid_forecast = forecast_data[
+            (forecast_data['priogrid_gid'] == priogrid_gid) & 
+            (forecast_data['month_id'] == target_month_id)
+        ]
+        
+        if grid_forecast.empty or 'outcome_p' not in grid_forecast.columns:
+            return None
+        
+        return float(grid_forecast.iloc[0]['outcome_p'])
+    
     def generate_content(self, priogrid_gid: int, target_month_id: int, 
                         forecast_data: dict, historical_data: pd.DataFrame, 
                         output_dir: Path) -> Optional[Path]:
@@ -42,17 +53,22 @@ class GridTemporalModule(GridOutputModule):
         
         historical_points = self._get_historical_data(historical_data, priogrid_gid)
         baseline_points = self._get_forecast_data(forecast_data['baseline'], priogrid_gid)
+        outcome_p = self._get_outcome_p(forecast_data['baseline'], priogrid_gid, target_month_id)
         
         if not historical_points:
             return None
         
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig = plt.figure(figsize=(18, 8))
+        gs = fig.add_gridspec(1, 2, width_ratios=[7, 1], wspace=0.3)
+        
+        ax_time = fig.add_subplot(gs[0])
+        ax_prob = fig.add_subplot(gs[1])
         
         sorted_hist_months = sorted(historical_points.keys())
         hist_values = [historical_points[m] for m in sorted_hist_months]
         
         if hist_values:
-            ax.plot(sorted_hist_months, hist_values, marker='o', linewidth=2, markersize=4,
+            ax_time.plot(sorted_hist_months, hist_values, marker='o', linewidth=2, markersize=4,
                    color='darkgray', alpha=0.8, label='Historical fatalities')
             
             if len(hist_values) >= 6:
@@ -65,23 +81,23 @@ class GridTemporalModule(GridOutputModule):
                         rolling_month_ids.append(sorted_hist_months[i])
                 
                 if rolling_mean:
-                    ax.plot(rolling_month_ids, rolling_mean, linewidth=2, color='darkblue',
+                    ax_time.plot(rolling_month_ids, rolling_mean, linewidth=2, color='darkblue',
                            alpha=0.8, label='6-Month Rolling Average')
         
         if baseline_points:
             baseline_months = sorted(baseline_points.keys())
             baseline_values = [baseline_points[m] for m in baseline_months]
             
-            ax.plot(baseline_months, baseline_values, linewidth=2, color='steelblue',
+            ax_time.plot(baseline_months, baseline_values, linewidth=2, color='steelblue',
                    alpha=0.7, linestyle='-', label='Baseline Forecast')
             
             forecast_start_month = min(baseline_months)
-            ax.axvline(x=forecast_start_month, color='gray', linewidth=2, 
+            ax_time.axvline(x=forecast_start_month, color='gray', linewidth=2, 
                       linestyle='--', alpha=0.8, zorder=1, label='Forecast Period')
             
             target_baseline_value = baseline_points.get(target_month_id)
             if target_baseline_value is not None:
-                ax.plot(target_month_id, target_baseline_value, marker='o', markersize=12, 
+                ax_time.plot(target_month_id, target_baseline_value, marker='o', markersize=12, 
                        color='steelblue', alpha=1.0)
         
         tick_positions = []
@@ -98,19 +114,50 @@ class GridTemporalModule(GridOutputModule):
                 tick_positions.append(month_id)
                 tick_labels.append(data_provider.month_id_to_string(month_id))
         
-        ax.set_xticks(tick_positions)
-        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
+        ax_time.set_xticks(tick_positions)
+        ax_time.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
         
         all_values = hist_values + baseline_values
         max_value = max(all_values) if all_values else 1
         
         y_max = max_value * 1.1 if max_value > 0 else 1
-        ax.set_ylim(0, y_max)
+        ax_time.set_ylim(0, y_max)
         
-        ax.set_ylabel('Fatalities', fontsize=12)
-        ax.set_title(f'Grid {priogrid_gid} - Monthly Fatalities Trend', fontsize=14, pad=15)
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc='upper left')
+        ax_time.set_ylabel('Fatalities', fontsize=12)
+        ax_time.set_title('Historical Trend', fontsize=12, pad=10)
+        ax_time.grid(True, alpha=0.3)
+        ax_time.legend(loc='upper left')
+        
+        if outcome_p is not None:
+            cmap = plt.cm.RdYlGn_r
+            norm = plt.Normalize(vmin=0, vmax=1)
+            
+            gradient = np.linspace(0, 1, 256).reshape(-1, 1)
+            ax_prob.imshow(gradient, aspect='auto', cmap=cmap, origin='lower', extent=[0, 1, 0, 1])
+            
+            ax_prob.axhline(y=outcome_p, color='black', linewidth=3, linestyle='-')
+            ax_prob.plot([0.5], [outcome_p], marker='D', markersize=12, color='black', 
+                        markeredgewidth=2, markerfacecolor='yellow', zorder=10)
+            
+            ax_prob.text(1.15, outcome_p, f'{outcome_p:.2f}', fontsize=11, 
+                        verticalalignment='center', fontweight='bold')
+            
+            ax_prob.set_ylim(0, 1)
+            ax_prob.set_xlim(0, 1)
+            ax_prob.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+            ax_prob.set_yticklabels(['0.00', '0.25', '0.50', '0.75', '1.00'])
+            ax_prob.set_xticks([])
+            ax_prob.set_ylabel('Probability', fontsize=12)
+            ax_prob.set_title('Probability', fontsize=12, pad=10)
+        else:
+            ax_prob.text(0.5, 0.5, 'N/A', ha='center', va='center', fontsize=14)
+            ax_prob.set_xlim(0, 1)
+            ax_prob.set_ylim(0, 1)
+            ax_prob.set_xticks([])
+            ax_prob.set_yticks([])
+            ax_prob.set_title('Probability', fontsize=12, pad=10)
+        
+        fig.suptitle(f'Grid {priogrid_gid} - Monthly Fatalities', fontsize=14, y=0.98)
         
         plt.tight_layout()
         
@@ -128,6 +175,7 @@ class GridTemporalModule(GridOutputModule):
         
         historical_points = self._get_historical_data(historical_data, priogrid_gid)
         baseline_points = self._get_forecast_data(forecast_data['baseline'], priogrid_gid)
+        outcome_p = self._get_outcome_p(forecast_data['baseline'], priogrid_gid, target_month_id)
         
         if not historical_points:
             return "No historical data available for this grid cell."
@@ -146,4 +194,10 @@ class GridTemporalModule(GridOutputModule):
         else:
             trend_desc = "consistent with"
         
-        return f"""The baseline forecast for {month_str} ({target_baseline:.1f} fatalities) is {trend_desc} the recent historical average ({recent_avg:.1f} fatalities)."""
+        base_interpretation = f"""The baseline forecast for {month_str} ({target_baseline:.1f} fatalities) is {trend_desc} the recent historical average ({recent_avg:.1f} fatalities)."""
+        
+        if outcome_p is not None:
+            prob_interpretation = f""" The predicted probability of at least one battle death is {outcome_p:.2f}."""
+            return base_interpretation + prob_interpretation
+        
+        return base_interpretation
