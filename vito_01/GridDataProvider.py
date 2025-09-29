@@ -1,15 +1,18 @@
 from pathlib import Path
 import pandas as pd
-from typing import Set, Tuple
+from typing import Set, Tuple, Optional
 from datetime import datetime
 
 class GridDataProvider:
     def __init__(self):
         self.pgm_path = Path(r"C:\Users\spatt\Desktop\FAST\data\pgm_data.parquet")
-        self.forecast_path = Path(r"C:\Users\spatt\Desktop\FAST\data\monthly_submission_2025_dr_growseas.parquet")
+        self.baseline_path = Path(r"C:\Users\spatt\Desktop\FAST\data\dorazio_base.parquet")
+        self.climate_path = Path(r"C:\Users\spatt\Desktop\FAST\data\dorazio_climate.parquet")
         self.historical_data = None
-        self.forecast_data = None
+        self.baseline_forecast = None
+        self.climate_forecast = None
         self.regional_grids = None
+        self.grid_country_map = None
         
         self.core_variables = [
             'country_id', 'priogrid_gid', 'month_id',
@@ -34,26 +37,52 @@ class GridDataProvider:
         self.regional_grids = regional_grids
         return self.regional_grids
     
+    def _build_grid_country_map(self) -> dict:
+        if self.grid_country_map is not None:
+            return self.grid_country_map
+        
+        if self.historical_data is None:
+            self.load_data()
+        
+        grid_country = self.historical_data[['priogrid_gid', 'name']].drop_duplicates('priogrid_gid')
+        self.grid_country_map = dict(zip(grid_country['priogrid_gid'].astype(int), grid_country['name']))
+        
+        return self.grid_country_map
+    
+    def get_country_name(self, priogrid_gid: int) -> Optional[str]:
+        country_map = self._build_grid_country_map()
+        return country_map.get(priogrid_gid)
+    
     def load_data(self):
         if self.historical_data is None:
             print(f"Loading {self.pgm_path.name}...")
             self.historical_data = pd.read_parquet(self.pgm_path)
             print(f"Loaded {len(self.historical_data):,} rows")
         
-        if self.forecast_data is None:
-            print(f"Loading {self.forecast_path.name}...")
-            self.forecast_data = pd.read_parquet(self.forecast_path)
-            print(f"Loaded {len(self.forecast_data):,} forecast rows")
+        if self.baseline_forecast is None:
+            print(f"Loading {self.baseline_path.name}...")
+            self.baseline_forecast = pd.read_parquet(self.baseline_path)
+            print(f"Loaded {len(self.baseline_forecast):,} baseline forecast rows")
+        
+        if self.climate_forecast is None:
+            print(f"Loading {self.climate_path.name}...")
+            self.climate_forecast = pd.read_parquet(self.climate_path)
+            print(f"Loaded {len(self.climate_forecast):,} climate forecast rows")
     
     def get_historical_data(self) -> pd.DataFrame:
         self.load_data()
         regional_grids = self._load_regional_grids()
         return self.historical_data[self.historical_data['priogrid_gid'].isin(regional_grids)].copy()
     
-    def get_forecast_data(self) -> pd.DataFrame:
+    def get_baseline_forecast(self) -> pd.DataFrame:
         self.load_data()
         regional_grids = self._load_regional_grids()
-        return self.forecast_data[self.forecast_data['priogrid_gid'].isin(regional_grids)].copy()
+        return self.baseline_forecast[self.baseline_forecast['priogrid_gid'].isin(regional_grids)].copy()
+    
+    def get_climate_forecast(self) -> pd.DataFrame:
+        self.load_data()
+        regional_grids = self._load_regional_grids()
+        return self.climate_forecast[self.climate_forecast['priogrid_gid'].isin(regional_grids)].copy()
     
     def month_id_to_date(self, month_id: int) -> Tuple[int, int]:
         months_since_jan_2020 = month_id - 481
@@ -93,21 +122,36 @@ class GridDataProvider:
         regional_grids = self._load_regional_grids()
         print(f"\nUnique regional grids: {len(regional_grids):,}")
         
-        print("\n=== FORECAST DATA INSPECTION ===")
-        print(f"\nForecast shape: {self.forecast_data.shape}")
-        print(f"\nForecast columns: {self.forecast_data.columns.tolist()}")
-        print(f"\nFirst few forecast rows:")
-        print(self.forecast_data.head())
+        print("\n=== BASELINE FORECAST INSPECTION ===")
+        print(f"\nBaseline shape: {self.baseline_forecast.shape}")
+        print(f"\nBaseline columns: {self.baseline_forecast.columns.tolist()}")
+        print(f"\nFirst few baseline rows:")
+        print(self.baseline_forecast.head())
         
-        print(f"\nForecast grids: {self.forecast_data['priogrid_gid'].nunique():,}")
-        print(f"Forecast months (month_id): {sorted(self.forecast_data['month_id'].unique())}")
+        print(f"\nBaseline grids: {self.baseline_forecast['priogrid_gid'].nunique():,}")
+        print(f"Baseline months (month_id): {sorted(self.baseline_forecast['month_id'].unique())}")
         
-        print("\nForecast month mapping:")
-        for month_id in sorted(self.forecast_data['month_id'].unique()):
+        print("\nBaseline month mapping:")
+        for month_id in sorted(self.baseline_forecast['month_id'].unique()):
             print(f"  {month_id} = {self.month_id_to_string(month_id)}")
         
-        regional_forecast = self.forecast_data[self.forecast_data['priogrid_gid'].isin(regional_grids)]
-        print(f"\nRegional forecast rows: {len(regional_forecast):,}")
+        print("\n=== CLIMATE FORECAST INSPECTION ===")
+        print(f"\nClimate shape: {self.climate_forecast.shape}")
+        print(f"\nClimate columns: {self.climate_forecast.columns.tolist()}")
+        print(f"\nFirst few climate rows:")
+        print(self.climate_forecast.head())
+        
+        print(f"\nClimate grids: {self.climate_forecast['priogrid_gid'].nunique():,}")
+        print(f"Climate months (month_id): {sorted(self.climate_forecast['month_id'].unique())}")
+        
+        print("\nClimate month mapping:")
+        for month_id in sorted(self.climate_forecast['month_id'].unique()):
+            print(f"  {month_id} = {self.month_id_to_string(month_id)}")
+        
+        regional_baseline = self.baseline_forecast[self.baseline_forecast['priogrid_gid'].isin(regional_grids)]
+        regional_climate = self.climate_forecast[self.climate_forecast['priogrid_gid'].isin(regional_grids)]
+        print(f"\nRegional baseline forecast rows: {len(regional_baseline):,}")
+        print(f"Regional climate forecast rows: {len(regional_climate):,}")
 
 
 if __name__ == "__main__":

@@ -25,15 +25,25 @@ def main():
     from GridDataProvider import GridDataProvider
     from grid_pdf_renderer import GridPDFRenderer
     from grid_temporal_module import GridTemporalModule
+    from grid_comparison_module import GridComparisonModule
+    from grid_spatial_module import GridSpatialModule
     
     data_provider = GridDataProvider()
     pdf_renderer = GridPDFRenderer(base_dir)
     
-    forecast_data = data_provider.get_forecast_data()
+    baseline_forecast = data_provider.get_baseline_forecast()
+    climate_forecast = data_provider.get_climate_forecast()
     historical_data = data_provider.get_historical_data()
     
+    forecast_data = {
+        'baseline': baseline_forecast,
+        'climate': climate_forecast
+    }
+    
     modules = [
-        GridTemporalModule(target_month_id)
+        GridTemporalModule(target_month_id),
+        GridComparisonModule(target_month_id),
+        GridSpatialModule(target_month_id)
     ]
     
     output_file = pdf_renderer.create_grid_report(

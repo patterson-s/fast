@@ -9,26 +9,25 @@ class DataProvider:
         self.forecast_path = Path(r"C:\Users\spatt\Desktop\FAST\data\FAST-Forecast-2025-09-23.parquet")
         self.historical_path = Path(r"C:\Users\spatt\Desktop\FAST\data\violence_cm_updated.xlsx")
         self.covariate_path = Path(r"C:\Users\spatt\Desktop\FAST\data\cy_covariates.json")
+        self.bluf_path = Path(r"C:\Users\spatt\Desktop\FAST\data\ptb_promptv2.json")
         self.forecast_data = None
         self.historical_data = None
         self.covariate_data = None
+        self.bluf_lookup = None
         self.regional_countries = None
     
     def _load_regional_countries(self) -> Set[str]:
-        """Load and cache the set of Africa & Middle East country codes"""
         if self.regional_countries is not None:
             return self.regional_countries
         
         if self.historical_data is None:
             self.load_data()
         
-        # Check for required columns
         required_cols = ['in_africa', 'in_middle_east', 'isoab']
         missing_cols = [col for col in required_cols if col not in self.historical_data.columns]
         if missing_cols:
             raise ValueError(f"Missing required regional columns in historical data: {missing_cols}")
         
-        # Get countries where in_africa == 1 OR in_middle_east == 1
         regional_mask = (self.historical_data['in_africa'] == 1) | (self.historical_data['in_middle_east'] == 1)
         regional_countries = set(self.historical_data[regional_mask]['isoab'].unique())
         
@@ -39,7 +38,6 @@ class DataProvider:
         return self.regional_countries
     
     def _validate_regional_country(self, country_code: str) -> None:
-        """Validate that a country is in Africa or Middle East"""
         regional_countries = self._load_regional_countries()
         if country_code not in regional_countries:
             raise ValueError(f"Country {country_code} is not in Africa or Middle East regions. Only Africa/Middle East countries are supported.")
@@ -59,21 +57,60 @@ class DataProvider:
                 covariate_list = json.load(f)
             self.covariate_data = pd.DataFrame(covariate_list)
     
+    def load_bluf_data(self):
+        if self.bluf_lookup is None:
+            if not self.bluf_path.exists():
+                raise FileNotFoundError(f"BLUF JSON file not found: {self.bluf_path}")
+            
+            with open(self.bluf_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if 'results' not in data:
+                raise ValueError(f"Invalid JSON format: missing 'results' field")
+            
+            lookup = {}
+            for result in data['results']:
+                country_code = result['country_code']
+                month = result['month']
+                year = result['year']
+                
+                if not result.get('success'):
+                    continue
+                
+                output = result.get('output', '').strip()
+                if not output:
+                    continue
+                
+                key = (country_code, month, year)
+                
+                if key in lookup:
+                    raise ValueError(f"Duplicate BLUF entry found for {country_code} {month}/{year}")
+                
+                lookup[key] = output
+            
+            self.bluf_lookup = lookup
+    
+    def get_bluf(self, country_code: str, month: int, year: int) -> str:
+        self.load_bluf_data()
+        key = (country_code, month, year)
+        
+        if key not in self.bluf_lookup:
+            raise KeyError(f"No BLUF found for {country_code} {month}/{year}")
+        
+        return self.bluf_lookup[key]
+    
     def get_forecast_data(self) -> pd.DataFrame:
         self.load_data()
-        # Filter to regional countries only
         regional_countries = self._load_regional_countries()
         return self.forecast_data[self.forecast_data['isoab'].isin(regional_countries)].copy()
     
     def get_historical_data(self) -> pd.DataFrame:
         self.load_data()
-        # Filter to regional countries only
         regional_countries = self._load_regional_countries()
         return self.historical_data[self.historical_data['isoab'].isin(regional_countries)].copy()
     
     def get_covariate_data(self) -> pd.DataFrame:
         self.load_covariate_data()
-        # Filter to regional countries only
         regional_countries = self._load_regional_countries()
         return self.covariate_data[self.covariate_data['isoab.x'].isin(regional_countries)].copy()
     
@@ -89,12 +126,10 @@ class DataProvider:
         self._validate_regional_country(country_code)
         self.load_data()
         
-        # Try forecast data first (using isoab)
         forecast_match = self.forecast_data[self.forecast_data['isoab'] == country_code]
         if not forecast_match.empty:
             return forecast_match['name'].iloc[0]
         
-        # Try historical data (using isoab)
         historical_match = self.historical_data[self.historical_data['isoab'] == country_code]
         if not historical_match.empty:
             return historical_match['name'].iloc[0]
@@ -102,10 +137,8 @@ class DataProvider:
         return country_code
     
     def get_monthly_forecast_distribution(self, month: int, year: int) -> pd.DataFrame:
-        # This will automatically be filtered to regional countries via get_forecast_data()
         forecast_data = self.get_forecast_data()
         
-        # Filter forecast data by year and month
         month_data = forecast_data[
             (forecast_data['dates'].dt.year == year) &
             (forecast_data['dates'].dt.month == month)
@@ -152,7 +185,6 @@ class DataProvider:
         return risk_category, intensity_category
     
     def get_cohort_countries(self, risk_category: str, intensity_category: str, month: int, year: int) -> List[str]:
-        # This will automatically be filtered to regional countries
         month_data = self.get_monthly_forecast_distribution(month, year)
         
         if month_data.empty:
@@ -169,13 +201,11 @@ class DataProvider:
         return cohort_data['isoab'].tolist()
     
     def get_global_monthly_averages(self, target_month: int, target_year: int) -> Dict[str, float]:
-        # "Global" averages are now regional averages (Africa & Middle East only)
         historical_data = self.get_historical_data()
         forecast_data = self.get_forecast_data()
         
         averages = {}
         
-        # Historical averages - get ALL months for past 5 years (regional countries only)
         historical_points = {}
         for year in range(2020, 2026):
             for month in range(1, 13):
@@ -184,20 +214,17 @@ class DataProvider:
                     
                 date_key = f"{year}-{month:02d}"
                 
-                # Get historical data for this month/year (already filtered to regional)
                 month_year_data = historical_data[
                     (historical_data['Year'] == year) & 
                     (historical_data['Month'] == month)
                 ].copy()
                 
                 if not month_year_data.empty:
-                    # Average across all regional countries for this time period
                     avg_fatalities = month_year_data.groupby('isoab')['total_fatalities'].sum().mean()
                     historical_points[date_key] = avg_fatalities
                 else:
                     historical_points[date_key] = 0.0
         
-        # Forecast averages - derive from dates field (already filtered to regional)
         forecast_points = {}
         unique_dates = forecast_data['dates'].unique()
         
@@ -219,7 +246,6 @@ class DataProvider:
         if not cohort_countries:
             return {}
         
-        # Validate all cohort countries are regional
         for country in cohort_countries:
             self._validate_regional_country(country)
         
@@ -227,7 +253,6 @@ class DataProvider:
         forecast_data = self.get_forecast_data()
         averages = {}
         
-        # Historical averages for cohort - ALL months
         historical_points = {}
         for year in range(2020, 2026):
             for month in range(1, 13):
@@ -236,7 +261,6 @@ class DataProvider:
                 
                 date_key = f"{year}-{month:02d}"
                 
-                # Get data for cohort countries only (already filtered to regional)
                 cohort_data = historical_data[
                     (historical_data['Year'] == year) & 
                     (historical_data['Month'] == month) &
@@ -244,13 +268,11 @@ class DataProvider:
                 ].copy()
                 
                 if not cohort_data.empty:
-                    # Average across cohort countries for this time period
                     avg_fatalities = cohort_data.groupby('isoab')['total_fatalities'].sum().mean()
                     historical_points[date_key] = avg_fatalities
                 else:
                     historical_points[date_key] = 0.0
         
-        # Forecast averages for cohort (already filtered to regional)
         forecast_points = {}
         unique_dates = forecast_data['dates'].unique()
         

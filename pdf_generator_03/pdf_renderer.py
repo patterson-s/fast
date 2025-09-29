@@ -1,3 +1,4 @@
+# ============== pdf_renderer.py ==============
 from pathlib import Path
 from datetime import datetime
 from reportlab.lib.pagesizes import LETTER, landscape
@@ -65,6 +66,9 @@ class PDFRenderer:
                             modules: List[OutputModule], 
                             forecast_data, historical_data) -> Path:
         
+        from data_provider import DataProvider
+        data_provider = DataProvider()
+        
         month_names = {12: "December", 3: "March", 9: "September"}
         month_name = month_names[target_month]
         
@@ -87,22 +91,10 @@ class PDFRenderer:
         section2_content = []
         section3_content = []
         
-        try:
-            from bluf_generator import BLUFGenerator
-            bluf_generator = BLUFGenerator()
-            
-            bluf_text = bluf_generator.generate_bluf(
-                country_code, target_month, target_year,
-                forecast_data, historical_data, None
-            )
-            
-            summary_content.append(Paragraph("Summary", self.styles['section_header']))
-            summary_content.append(Paragraph(bluf_text, self.styles['bluf']))
-            
-        except Exception as e:
-            print(f"Error generating BLUF: {e}")
-            summary_content.append(Paragraph("Summary", self.styles['section_header']))
-            summary_content.append(Paragraph("BLUF generation failed", self.styles['bluf']))
+        bluf_text = data_provider.get_bluf(country_code, target_month, target_year)
+        
+        summary_content.append(Paragraph("Summary", self.styles['section_header']))
+        summary_content.append(Paragraph(bluf_text, self.styles['bluf']))
         
         if len(modules) > 0:
             module = modules[0]

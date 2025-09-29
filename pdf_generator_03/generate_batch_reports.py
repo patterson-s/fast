@@ -1,3 +1,4 @@
+# ============== generate_batch_reports.py ==============
 #!/usr/bin/env python3
 
 import sys
@@ -10,9 +11,9 @@ def get_all_country_month_combinations(data_provider) -> List[Tuple[str, int, in
     forecast_data = data_provider.get_forecast_data()
     
     month_mappings = {
-        552: (12, 2025),  # Dec 2025
-        555: (3, 2026),   # Mar 2026  
-        561: (9, 2026)    # Sep 2026
+        552: (12, 2025),
+        555: (3, 2026),
+        561: (9, 2026)
     }
     
     combinations = []
@@ -59,10 +60,10 @@ def sample_by_risk_category(combinations: List[Tuple[str, int, int, str]]) -> Li
     return sampled
 
 def main():
-    random.seed(42)  # For reproducibility
+    random.seed(42)
     
-    base_dir = Path(r"C:\Users\spatt\Desktop\FAST\pdf_generator_02")
-    output_dir = Path(r"C:\Users\spatt\Desktop\FAST\pdf_generator_02\evalatelier")
+    base_dir = Path(r"C:\Users\spatt\Desktop\FAST\pdf_generator_03")
+    output_dir = Path(r"C:\Users\spatt\Desktop\FAST\pdf_generator_03\evalatelier")
     output_dir.mkdir(exist_ok=True)
     
     from data_provider import DataProvider

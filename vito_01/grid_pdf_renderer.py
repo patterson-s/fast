@@ -58,6 +58,7 @@ class GridPDFRenderer:
         from GridDataProvider import GridDataProvider
         data_provider = GridDataProvider()
         
+        country_name = data_provider.get_country_name(priogrid_gid)
         month_str = data_provider.month_id_to_string(target_month_id)
         
         output_file = self.output_dir / f"grid_{priogrid_gid}_forecast_{target_month_id}.pdf"
@@ -65,7 +66,12 @@ class GridPDFRenderer:
         
         story = []
         
-        story.append(Paragraph(f"Grid Cell Forecast: {priogrid_gid}", self.styles['title']))
+        if country_name:
+            title_text = f"Grid Cell Forecast: {priogrid_gid} ({country_name})"
+        else:
+            title_text = f"Grid Cell Forecast: {priogrid_gid}"
+        
+        story.append(Paragraph(title_text, self.styles['title']))
         story.append(Paragraph(f"Target Month: {month_str}", self.styles['subtitle']))
         story.append(Spacer(1, 20))
         
@@ -77,7 +83,10 @@ class GridPDFRenderer:
             content_path = module.generate_content(priogrid_gid, target_month_id,
                                                   forecast_data, historical_data, self.output_dir)
             if content_path and content_path.exists():
-                story.append(Image(str(content_path), width=6*inch, height=3.5*inch))
+                if 'spatial' in str(content_path):
+                    story.append(Image(str(content_path), width=4.5*inch, height=4.5*inch))
+                else:
+                    story.append(Image(str(content_path), width=6*inch, height=3.5*inch))
                 story.append(Spacer(1, 15))
             
             interpretation = module.get_interpretation(priogrid_gid, target_month_id,
