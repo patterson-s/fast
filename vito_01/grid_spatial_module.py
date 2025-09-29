@@ -119,9 +119,9 @@ class GridSpatialModule(GridOutputModule):
                 'country': neighbor_country
             }
         
-        fig, ax = plt.subplots(figsize=(10, 10))
-        ax.set_xlim(0, 3)
-        ax.set_ylim(0, 3)
+        fig, ax = plt.subplots(figsize=(5, 4))
+        ax.set_xlim(-0.2, 3.2)
+        ax.set_ylim(-0.2, 3.2)
         ax.set_aspect('equal')
         ax.axis('off')
         
@@ -143,7 +143,7 @@ class GridSpatialModule(GridOutputModule):
             color = self._get_color_for_value(value)
             
             rect = mpatches.Rectangle((x, y), 1, 1, 
-                                     linewidth=2, 
+                                     linewidth=1.5, 
                                      edgecolor='#000000', 
                                      facecolor=color)
             ax.add_patch(rect)
@@ -155,16 +155,17 @@ class GridSpatialModule(GridOutputModule):
             
             ax.text(x + 0.5, y + 0.6, value_text, 
                    ha='center', va='center', 
-                   fontsize=16, fontweight='bold')
+                   fontsize=13, fontweight='bold')
             
-            ax.text(x + 0.5, y + 0.4, f"Grid {gid}", 
+            ax.text(x + 0.5, y + 0.4, f"{gid}", 
                    ha='center', va='center', 
-                   fontsize=9, style='italic')
+                   fontsize=7, style='italic', color='gray')
             
             if country:
-                ax.text(x + 0.5, y + 0.2, country, 
+                country_short = country[:12] + '...' if len(country) > 12 else country
+                ax.text(x + 0.5, y + 0.15, country_short, 
                        ha='center', va='center', 
-                       fontsize=11, wrap=True)
+                       fontsize=8)
         
         adjacent_pairs = [
             ('NW', 'N'), ('N', 'NE'),
@@ -192,26 +193,23 @@ class GridSpatialModule(GridOutputModule):
                     line_x = [max(x1, x2), max(x1, x2)]
                     line_y = [y1, y1 + 1]
                 
-                ax.plot(line_x, line_y, 'r--', linewidth=3, zorder=10)
-        
-        month_str = data_provider.month_id_to_string(target_month_id)
-        plt.title(f'Grid {priogrid_gid} - Spatial Context at {month_str}\nBaseline Forecast (Fatalities)', 
-                 fontsize=14, pad=20)
+                ax.plot(line_x, line_y, 'r--', linewidth=2, zorder=10)
         
         legend_elements = [
             mpatches.Patch(facecolor='#E8F5E9', edgecolor='black', label='0'),
             mpatches.Patch(facecolor='#90EE90', edgecolor='black', label='1-10'),
             mpatches.Patch(facecolor='#FFD700', edgecolor='black', label='11-100'),
-            mpatches.Patch(facecolor='#FF8C42', edgecolor='black', label='101-1000'),
-            mpatches.Patch(facecolor='#FF6B6B', edgecolor='black', label='1001+'),
-            plt.Line2D([0], [0], color='red', linewidth=3, linestyle='--', label='Cross-Border')
+            mpatches.Patch(facecolor='#FF8C42', edgecolor='black', label='101-1k'),
+            mpatches.Patch(facecolor='#FF6B6B', edgecolor='black', label='1k+'),
+            plt.Line2D([0], [0], color='red', linewidth=2, linestyle='--', label='Border')
         ]
-        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1))
+        ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1.0, 0.5), 
+                 fontsize=8, frameon=False)
         
         plt.tight_layout()
         
         img_path = output_dir / f"grid_spatial_{priogrid_gid}_{target_month_id}.png"
-        plt.savefig(img_path, dpi=300, bbox_inches='tight')
+        plt.savefig(img_path, dpi=150, bbox_inches='tight')
         plt.close()
         
         return img_path

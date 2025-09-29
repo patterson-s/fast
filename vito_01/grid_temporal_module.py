@@ -58,8 +58,8 @@ class GridTemporalModule(GridOutputModule):
         if not historical_points:
             return None
         
-        fig = plt.figure(figsize=(18, 8))
-        gs = fig.add_gridspec(1, 2, width_ratios=[7, 1], wspace=0.3)
+        fig = plt.figure(figsize=(8, 4))
+        gs = fig.add_gridspec(1, 2, width_ratios=[9, 1], wspace=0.15)
         
         ax_time = fig.add_subplot(gs[0])
         ax_prob = fig.add_subplot(gs[1])
@@ -68,8 +68,8 @@ class GridTemporalModule(GridOutputModule):
         hist_values = [historical_points[m] for m in sorted_hist_months]
         
         if hist_values:
-            ax_time.plot(sorted_hist_months, hist_values, marker='o', linewidth=2, markersize=4,
-                   color='darkgray', alpha=0.8, label='Historical fatalities')
+            ax_time.plot(sorted_hist_months, hist_values, marker='o', linewidth=1.5, markersize=3,
+                   color='darkgray', alpha=0.8, label='Historical')
             
             if len(hist_values) >= 6:
                 rolling_mean = []
@@ -81,24 +81,24 @@ class GridTemporalModule(GridOutputModule):
                         rolling_month_ids.append(sorted_hist_months[i])
                 
                 if rolling_mean:
-                    ax_time.plot(rolling_month_ids, rolling_mean, linewidth=2, color='darkblue',
-                           alpha=0.8, label='6-Month Rolling Average')
+                    ax_time.plot(rolling_month_ids, rolling_mean, linewidth=1.5, color='darkblue',
+                           alpha=0.8, label='6-mo avg')
         
         if baseline_points:
             baseline_months = sorted(baseline_points.keys())
             baseline_values = [baseline_points[m] for m in baseline_months]
             
-            ax_time.plot(baseline_months, baseline_values, linewidth=2, color='steelblue',
-                   alpha=0.7, linestyle='-', label='Baseline Forecast')
+            ax_time.plot(baseline_months, baseline_values, linewidth=1.5, color='steelblue',
+                   alpha=0.7, linestyle='-', label='Forecast')
             
             forecast_start_month = min(baseline_months)
-            ax_time.axvline(x=forecast_start_month, color='gray', linewidth=2, 
-                      linestyle='--', alpha=0.8, zorder=1, label='Forecast Period')
+            ax_time.axvline(x=forecast_start_month, color='gray', linewidth=1.5, 
+                      linestyle='--', alpha=0.8, zorder=1)
             
             target_baseline_value = baseline_points.get(target_month_id)
             if target_baseline_value is not None:
-                ax_time.plot(target_month_id, target_baseline_value, marker='o', markersize=12, 
-                       color='steelblue', alpha=1.0)
+                ax_time.plot(target_month_id, target_baseline_value, marker='o', markersize=8, 
+                       color='steelblue', alpha=1.0, zorder=10)
         
         tick_positions = []
         tick_labels = []
@@ -115,7 +115,8 @@ class GridTemporalModule(GridOutputModule):
                 tick_labels.append(data_provider.month_id_to_string(month_id))
         
         ax_time.set_xticks(tick_positions)
-        ax_time.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
+        ax_time.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=8)
+        ax_time.tick_params(axis='y', labelsize=8)
         
         all_values = hist_values + baseline_values
         max_value = max(all_values) if all_values else 1
@@ -123,46 +124,40 @@ class GridTemporalModule(GridOutputModule):
         y_max = max_value * 1.1 if max_value > 0 else 1
         ax_time.set_ylim(0, y_max)
         
-        ax_time.set_ylabel('Fatalities', fontsize=12)
-        ax_time.set_title('Historical Trend', fontsize=12, pad=10)
+        ax_time.set_ylabel('Fatalities', fontsize=9)
         ax_time.grid(True, alpha=0.3)
-        ax_time.legend(loc='upper left')
+        ax_time.legend(loc='upper left', fontsize=8, framealpha=0.9)
         
         if outcome_p is not None:
             cmap = plt.cm.RdYlGn_r
-            norm = plt.Normalize(vmin=0, vmax=1)
-            
             gradient = np.linspace(0, 1, 256).reshape(-1, 1)
             ax_prob.imshow(gradient, aspect='auto', cmap=cmap, origin='lower', extent=[0, 1, 0, 1])
             
-            ax_prob.axhline(y=outcome_p, color='black', linewidth=3, linestyle='-')
-            ax_prob.plot([0.5], [outcome_p], marker='D', markersize=12, color='black', 
-                        markeredgewidth=2, markerfacecolor='yellow', zorder=10)
+            ax_prob.axhline(y=outcome_p, color='black', linewidth=2, linestyle='-')
+            ax_prob.plot([0.5], [outcome_p], marker='D', markersize=8, color='black', 
+                        markeredgewidth=1.5, markerfacecolor='yellow', zorder=10)
             
-            ax_prob.text(1.15, outcome_p, f'{outcome_p:.2f}', fontsize=11, 
-                        verticalalignment='center', fontweight='bold')
+            ax_prob.text(0.5, outcome_p + 0.05, f'{outcome_p:.2f}', fontsize=8, 
+                        ha='center', va='bottom', fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
             
             ax_prob.set_ylim(0, 1)
             ax_prob.set_xlim(0, 1)
-            ax_prob.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-            ax_prob.set_yticklabels(['0.00', '0.25', '0.50', '0.75', '1.00'])
+            ax_prob.set_yticks([0, 0.5, 1.0])
+            ax_prob.set_yticklabels(['0', '0.5', '1'], fontsize=8)
             ax_prob.set_xticks([])
-            ax_prob.set_ylabel('Probability', fontsize=12)
-            ax_prob.set_title('Probability', fontsize=12, pad=10)
+            ax_prob.set_ylabel('P(≥1 death)', fontsize=8)
         else:
-            ax_prob.text(0.5, 0.5, 'N/A', ha='center', va='center', fontsize=14)
+            ax_prob.text(0.5, 0.5, 'N/A', ha='center', va='center', fontsize=9)
             ax_prob.set_xlim(0, 1)
             ax_prob.set_ylim(0, 1)
             ax_prob.set_xticks([])
             ax_prob.set_yticks([])
-            ax_prob.set_title('Probability', fontsize=12, pad=10)
-        
-        fig.suptitle(f'Grid {priogrid_gid} - Monthly Fatalities', fontsize=14, y=0.98)
         
         plt.tight_layout()
         
         img_path = output_dir / f"grid_temporal_{priogrid_gid}_{target_month_id}.png"
-        plt.savefig(img_path, dpi=300, bbox_inches='tight')
+        plt.savefig(img_path, dpi=150, bbox_inches='tight')
         plt.close()
         
         return img_path

@@ -34,7 +34,7 @@ class GridComparisonModule(GridOutputModule):
         if not baseline_points or not climate_points:
             return None
         
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig, ax = plt.subplots(figsize=(8, 4))
         
         baseline_months = sorted(baseline_points.keys())
         baseline_values = [baseline_points[m] for m in baseline_months]
@@ -43,38 +43,28 @@ class GridComparisonModule(GridOutputModule):
         climate_values = [climate_points[m] for m in climate_months]
         
         ax.plot(baseline_months, baseline_values, linewidth=2, color='steelblue',
-               alpha=0.8, linestyle='-', label='Baseline Forecast', marker='o', markersize=6)
+               alpha=0.8, linestyle='-', label='Baseline', marker='o', markersize=4)
         
         ax.plot(climate_months, climate_values, linewidth=2, color='forestgreen',
-               alpha=0.8, linestyle='-', label='Climate Forecast', marker='s', markersize=6)
+               alpha=0.8, linestyle='-', label='Climate', marker='s', markersize=4)
         
         target_baseline_value = baseline_points.get(target_month_id)
         target_climate_value = climate_points.get(target_month_id)
         
         if target_baseline_value is not None:
-            ax.plot(target_month_id, target_baseline_value, marker='o', markersize=14, 
+            ax.plot(target_month_id, target_baseline_value, marker='o', markersize=10, 
                    color='steelblue', alpha=1.0, zorder=5)
-            
-            ax.text(target_month_id, target_baseline_value, f' {target_baseline_value:.1f}',
-                   fontsize=11, color='steelblue', fontweight='bold',
-                   verticalalignment='bottom', horizontalalignment='left')
         
         if target_climate_value is not None:
-            ax.plot(target_month_id, target_climate_value, marker='s', markersize=14, 
+            ax.plot(target_month_id, target_climate_value, marker='s', markersize=10, 
                    color='forestgreen', alpha=1.0, zorder=5)
-            
-            offset_direction = 'top' if target_climate_value > target_baseline_value else 'bottom'
-            va = offset_direction
-            
-            ax.text(target_month_id, target_climate_value, f' {target_climate_value:.1f}',
-                   fontsize=11, color='forestgreen', fontweight='bold',
-                   verticalalignment=va, horizontalalignment='left')
         
         tick_positions = baseline_months
         tick_labels = [data_provider.month_id_to_string(m) for m in baseline_months]
         
         ax.set_xticks(tick_positions)
-        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
+        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=8)
+        ax.tick_params(axis='y', labelsize=8)
         
         all_values = baseline_values + climate_values
         max_value = max(all_values) if all_values else 1
@@ -82,15 +72,14 @@ class GridComparisonModule(GridOutputModule):
         y_max = max_value * 1.15 if max_value > 0 else 1
         ax.set_ylim(0, y_max)
         
-        ax.set_ylabel('Fatalities', fontsize=12)
-        ax.set_title(f'Grid {priogrid_gid} - Baseline vs Climate Model Forecast', fontsize=14, pad=15)
+        ax.set_ylabel('Fatalities', fontsize=9)
         ax.grid(True, alpha=0.3)
-        ax.legend(loc='upper left')
+        ax.legend(loc='upper left', fontsize=8)
         
         plt.tight_layout()
         
         img_path = output_dir / f"grid_comparison_{priogrid_gid}_{target_month_id}.png"
-        plt.savefig(img_path, dpi=300, bbox_inches='tight')
+        plt.savefig(img_path, dpi=150, bbox_inches='tight')
         plt.close()
         
         return img_path
