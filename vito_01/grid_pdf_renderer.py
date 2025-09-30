@@ -7,11 +7,20 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from typing import List
 from grid_base_module import GridOutputModule
+import sys
+
+sys.path.append(str(Path(__file__).parent.parent / "abtest_vito"))
+from grid_bluf_reader import GridBLUFReader
 
 class GridPDFRenderer:
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path, blufs_dir: Path = None):
         self.output_dir = output_dir
         self.styles = self._create_styles()
+        
+        if blufs_dir is None:
+            blufs_dir = Path(__file__).parent.parent / "abtest_vito" / "output"
+        
+        self.bluf_reader = GridBLUFReader(blufs_dir)
     
     def _create_styles(self):
         base_styles = getSampleStyleSheet()
@@ -87,7 +96,15 @@ class GridPDFRenderer:
         comparison_content = []
         
         summary_content.append(Paragraph("Summary", self.styles['section_header']))
-        summary_content.append(Paragraph("(BLUF content to be added)", self.styles['context']))
+        
+        bluf_text = self.bluf_reader.get_bluf(priogrid_gid, target_month_id)
+        if bluf_text:
+            summary_content.append(Paragraph(bluf_text, self.styles['interpretation']))
+        else:
+            summary_content.append(Paragraph(
+                f"BLUF not available for Grid {priogrid_gid}, Month {target_month_id}", 
+                self.styles['context']
+            ))
         
         temporal_module = modules[0]
         temporal_content.append(Paragraph("Violence trend", self.styles['section_header']))

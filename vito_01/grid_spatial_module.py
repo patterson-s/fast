@@ -312,6 +312,6 @@ class GridSpatialModule(GridOutputModule):
             bucket_total = len(bucket_grids)
             
             if bucket_total > 0:
-                global_rank_desc = f" Globally, this grid is among {bucket_total} grids in the {category_name} category, which spans from {category_range} per month."
+                global_rank_desc = f" Regionally, this grid is among {bucket_total} grids in the {category_name} category, which spans from {category_range} per month."
         
         return f"""For {month_str}: {neighborhood_desc}. {border_desc}.{country_rank_desc}{global_rank_desc}"""

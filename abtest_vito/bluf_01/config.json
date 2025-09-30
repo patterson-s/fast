@@ -1,0 +1,32 @@
+{
+  "variant_name": "grid_bluf_v1",
+  "model": "command-a-03-2025",
+  "temperature": 0.3,
+  "api_key_env_var": "COHERE_API_KEY",
+  "prompt_type": "system_user",
+  "system_prompt_path": "system.txt",
+  "user_prompt_path": "user.txt",
+  "template_variables": [
+    "grid_id",
+    "country",
+    "month_str",
+    "baseline_prob_percent",
+    "baseline_fatalities_str",
+    "risk_category",
+    "climate_diff_str",
+    "historical_avg_str",
+    "historical_trend",
+    "forecast_vs_historical",
+    "neighbor_avg_str",
+    "neighbor_max_str",
+    "neighbor_comparison",
+    "country_rank",
+    "country_total",
+    "country_higher",
+    "country_lower",
+    "global_category",
+    "global_category_range"
+  ],
+  "max_retries": 3,
+  "timeout_seconds": 30
+}

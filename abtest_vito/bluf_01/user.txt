@@ -1,0 +1,29 @@
+Generate a BLUF summary for the following grid cell conflict forecast:
+
+Grid ID: {grid_id}
+Country: {country}
+Month: {month_str}
+Probability of ≥1 battle death: {baseline_prob_percent}
+Predicted fatalities: {baseline_fatalities_str}
+Risk category: {risk_category}
+
+Historical context:
+- Historical average: {historical_avg_str} fatalities
+- Historical trend: {historical_trend}
+- Forecast vs historical: {forecast_vs_historical} the historical average
+
+Spatial context:
+- Neighbor average: {neighbor_avg_str} fatalities
+- Neighbor maximum: {neighbor_max_str} fatalities
+- Comparison: {neighbor_comparison}
+
+Within-country ranking:
+- Rank: {country_rank} out of {country_total} grids
+- Grids with higher forecast: {country_higher}
+- Grids with lower forecast: {country_lower}
+
+Climate model comparison:
+- Climate model difference: {climate_diff_str}
+
+Global context:
+- Category: {global_category} ({global_category_range})
